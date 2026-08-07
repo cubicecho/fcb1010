@@ -1,4 +1,4 @@
-import { Download, FilePlus2, FolderOpen, HardDriveDownload, Search, Send } from 'lucide-react';
+import { Download, FilePlus2, FolderOpen, HardDriveDownload, Redo2, Search, Send, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import {
   type FirmwareInfo,
   isFcbDump,
   parseVersionResponse,
+  unpackDump,
   versionRequestMessage,
 } from '@/lib/fcb/pack';
 import { toHex } from '@/lib/midi/decode';
@@ -19,6 +20,10 @@ const SOURCE_LABELS = { file: 'from file', device: 'from pedal', default: 'new s
 const RECEIVE_TIMEOUT_MS = 30000;
 /** ControlCenter waits 5s for a version reply before assuming stock firmware. */
 const VERSION_TIMEOUT_MS = 5000;
+/** Pause after sending a dump before requesting the readback, so the pedal finishes storing it. */
+const VERIFY_DELAY_MS = 3000;
+
+type VerifyState = 'idle' | 'verifying' | 'verified' | 'mismatch' | 'unverified';
 
 type DetectState =
   | null
@@ -36,19 +41,23 @@ type DetectState =
  * banner offering to load them.
  */
 export function DumpToolbar() {
-  const { dump, loadDump, loadDefault, toSysex, markClean } = useDump();
+  const { dump, loadDump, loadDefault, toSysex, markClean, undo, redo, canUndo, canRedo } = useDump();
   const midi = useMidi();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [received, setReceived] = useState<{ bytes: number[]; portName: string } | null>(null);
-  const [sendState, setSendState] = useState<'idle' | 'sent'>('idle');
   const [receiveState, setReceiveState] = useState<'idle' | 'waiting' | 'timeout' | 'sendfailed'>('idle');
   const [detectState, setDetectState] = useState<DetectState>(null);
+  const [verifyState, setVerifyState] = useState<VerifyState>('idle');
   const waitingRef = useRef(false);
   const receiveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const detectingRef = useRef(false);
   /** Sysex seen while detecting that was not a version reply (for diagnostics). */
   const strayReplyRef = useRef<readonly number[] | null>(null);
   const versionTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The memory we just sent, while waiting on the verification readback. */
+  const verifyingRef = useRef<Uint8Array | null>(null);
+  const verifyDelayRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const verifyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return midi.subscribe((entry) => {
@@ -64,6 +73,17 @@ export function DumpToolbar() {
         }
       }
       if (!isFcbDump(entry.message.data)) return;
+      if (verifyingRef.current) {
+        // Readback after "Send to pedal" — compare, don't load.
+        const sent = verifyingRef.current;
+        verifyingRef.current = null;
+        clearTimeout(verifyTimerRef.current);
+        const readback = unpackDump(entry.message.data);
+        const matches = readback.length === sent.length && readback.every((byte, i) => byte === sent[i]);
+        setVerifyState(matches ? 'verified' : 'mismatch');
+        if (matches) markClean();
+        return;
+      }
       if (waitingRef.current) {
         // We asked for this dump — load it directly.
         waitingRef.current = false;
@@ -74,16 +94,26 @@ export function DumpToolbar() {
       }
       setReceived({ bytes: [...entry.message.data], portName: entry.portName });
     });
-  }, [midi.subscribe, loadDump]);
+  }, [midi.subscribe, loadDump, markClean]);
 
   useEffect(() => {
     return () => {
       clearTimeout(receiveTimerRef.current);
       clearTimeout(versionTimerRef.current);
+      clearTimeout(verifyDelayRef.current);
+      clearTimeout(verifyTimerRef.current);
     };
   }, []);
 
-  const openFile = () => fileInputRef.current?.click();
+  const confirmDiscard = () => !dump?.dirty || confirm('You have unsaved changes that will be lost. Continue?');
+
+  const newSetup = () => {
+    if (confirmDiscard()) loadDefault();
+  };
+
+  const openFile = () => {
+    if (confirmDiscard()) fileInputRef.current?.click();
+  };
 
   const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
     const file = event.target.files?.[0];
@@ -102,7 +132,7 @@ export function DumpToolbar() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'fcb1010-uno.syx';
+    link.download = `fcb1010-${new Date().toISOString().slice(0, 10)}.syx`;
     link.click();
     URL.revokeObjectURL(url);
     markClean();
@@ -110,13 +140,32 @@ export function DumpToolbar() {
 
   const sendToPedal = () => {
     const sysex = toSysex();
-    if (!sysex) return;
+    if (!dump || !sysex) return;
+    if (!confirm('Send this setup to the pedal? It overwrites all 100 presets and global settings stored on it.')) {
+      return;
+    }
     if (!midi.send(Array.from(sysex))) {
       setReceiveState('sendfailed');
       return;
     }
-    setSendState('sent');
-    setTimeout(() => setSendState('idle'), 2500);
+    const sentMemory = new Uint8Array(dump.memory);
+    setVerifyState('verifying');
+    verifyingRef.current = null;
+    clearTimeout(verifyDelayRef.current);
+    clearTimeout(verifyTimerRef.current);
+    // Give the pedal time to store the dump, then read it back and compare.
+    verifyDelayRef.current = setTimeout(() => {
+      verifyingRef.current = sentMemory;
+      if (!midi.send(dumpRequestMessage(dump.deviceId))) {
+        verifyingRef.current = null;
+        setVerifyState('unverified');
+        return;
+      }
+      verifyTimerRef.current = setTimeout(() => {
+        verifyingRef.current = null;
+        setVerifyState('unverified');
+      }, RECEIVE_TIMEOUT_MS);
+    }, VERIFY_DELAY_MS);
   };
 
   const receiveFromPedal = () => {
@@ -166,7 +215,7 @@ export function DumpToolbar() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={loadDefault}>
+        <Button variant="outline" size="sm" onClick={newSetup}>
           <FilePlus2 />
           New
         </Button>
@@ -177,6 +226,19 @@ export function DumpToolbar() {
         <Button variant="outline" size="sm" onClick={saveFile} disabled={!dump}>
           <Download />
           Save .syx
+        </Button>
+        <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
+          <Undo2 />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={redo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Shift+Z)"
+          aria-label="Redo"
+        >
+          <Redo2 />
         </Button>
         <Button
           variant="outline"
@@ -192,11 +254,11 @@ export function DumpToolbar() {
           variant="outline"
           size="sm"
           onClick={sendToPedal}
-          disabled={!dump || outputUnavailable}
+          disabled={!dump || outputUnavailable || verifyState === 'verifying'}
           title={outputHint}
         >
           <Send />
-          {sendState === 'sent' ? 'Sent!' : 'Send to pedal'}
+          {verifyState === 'verifying' ? 'Verifying…' : 'Send to pedal'}
         </Button>
         <Button
           variant="outline"
@@ -247,6 +309,41 @@ export function DumpToolbar() {
             will be picked up here.
           </span>
           <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setReceiveState('idle')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+
+      {verifyState === 'verified' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-primary/50 bg-primary/5 px-3 py-2 text-sm">
+          <span>Sent and verified — the pedal's memory matches this setup.</span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setVerifyState('idle')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+
+      {verifyState === 'mismatch' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">
+          <span>
+            The pedal's memory does <span className="font-medium">not</span> match what was sent. Try sending again; if
+            it keeps happening, the MIDI link may be corrupting sysex (some USB interfaces drop or mangle large
+            messages).
+          </span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setVerifyState('idle')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+
+      {verifyState === 'unverified' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm">
+          <span>
+            Setup sent, but the pedal didn't answer the verification readback. On stock (non-UnO) firmware the pedal
+            can't send its memory on request, so the send may still have worked — check a preset on the pedal to
+            confirm.
+          </span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setVerifyState('idle')}>
             Dismiss
           </Button>
         </div>
