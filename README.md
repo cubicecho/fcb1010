@@ -30,7 +30,7 @@ Planned:
 
 ```sh
 npm install
-npm run dev        # dev server on http://localhost:5173
+npm run dev        # dev server on http://localhost:3000
 npm run check      # biome + typecheck
 npm test           # vitest
 npm run build      # production build to dist/
