@@ -2,7 +2,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useDump } from '@/lib/fcb/DumpProvider';
 import { type FcbPreset, getPreset, presetLabel, setPreset } from '@/lib/fcb/model';
+import { CC_PICKER_ITEMS, NOTE_PICKER_ITEMS } from '@/lib/midi/names';
 import { MidiNumberInput } from './MidiNumberInput';
+import { MidiValuePicker } from './MidiValuePicker';
 
 interface SlotRowProps {
   id: string;
@@ -95,8 +97,9 @@ export function PresetEditor({ presetIndex }: { presetIndex: number }) {
             }
           >
             <Field label="Controller">
-              <MidiNumberInput
+              <MidiValuePicker
                 value={slot.controller}
+                items={CC_PICKER_ITEMS}
                 disabled={!slot.enabled}
                 onChange={(controller) =>
                   apply((d) => {
@@ -138,8 +141,9 @@ export function PresetEditor({ presetIndex }: { presetIndex: number }) {
             }
           >
             <Field label="Controller">
-              <MidiNumberInput
+              <MidiValuePicker
                 value={slot.controller}
+                items={CC_PICKER_ITEMS}
                 disabled={!slot.enabled}
                 onChange={(controller) =>
                   apply((d) => {
@@ -188,8 +192,9 @@ export function PresetEditor({ presetIndex }: { presetIndex: number }) {
         }
       >
         <Field label="Value">
-          <MidiNumberInput
+          <MidiValuePicker
             value={preset.note.value}
+            items={NOTE_PICKER_ITEMS}
             disabled={!preset.note.enabled}
             onChange={(value) =>
               apply((d) => {

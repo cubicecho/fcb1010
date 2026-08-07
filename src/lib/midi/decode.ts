@@ -1,31 +1,7 @@
+import { CC_NAMES, noteName } from './names';
 import type { DecodedMidiMessage, MidiMessageKind } from './types';
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-/** MIDI note number to scientific pitch, middle C (60) = C4. */
-export function noteName(note: number): string {
-  const octave = Math.floor(note / 12) - 1;
-  return `${NOTE_NAMES[note % 12]}${octave}`;
-}
-
-const CC_NAMES: Record<number, string> = {
-  0: 'Bank Select',
-  1: 'Mod Wheel',
-  2: 'Breath',
-  4: 'Foot Controller',
-  5: 'Portamento Time',
-  7: 'Volume',
-  10: 'Pan',
-  11: 'Expression',
-  32: 'Bank Select LSB',
-  64: 'Sustain',
-  65: 'Portamento',
-  66: 'Sostenuto',
-  67: 'Soft Pedal',
-  120: 'All Sound Off',
-  121: 'Reset Controllers',
-  123: 'All Notes Off',
-};
+export { noteName };
 
 /** Well-known sysex manufacturer ids (only ones we care about here). */
 const MANUFACTURERS: Record<string, string> = {
