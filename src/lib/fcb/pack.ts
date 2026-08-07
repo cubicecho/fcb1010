@@ -12,15 +12,83 @@ const DATA_END = DUMP_SIZE - 1;
 const RUN = 8;
 
 /**
- * Patchdump upload request: the dump header with no data, terminated
- * immediately. UnO firmware responds with a full 2352-byte patchdump
- * (this is what ControlCenter's "download" uses); stock firmware ignores
- * it and requires the manual foot-switch transmit procedure instead.
+ * Short command message: `F0 00 20 32 <dev> 0C <fn> F7`. Function bytes
+ * (reverse-engineered from FCB/UnO ControlCenter): 0x40 = firmware version
+ * request, 0x4F = patchdump upload request, 0x50+n = request chunk n of a
+ * chunked upload. 0x0F must NEVER be sent bare — it is the patchdump
+ * function itself, and a data-less dump header puts the pedal into
+ * sysex-receive mode where it stops sending MIDI until power-cycled.
  */
-export function dumpRequestMessage(deviceId = 0x01): number[] {
+function commandMessage(fn: number, deviceId: number): number[] {
   const message = [...HEADER, 0xf7];
   message[4] = deviceId & 0x7f;
+  message[6] = fn & 0x7f;
   return message;
+}
+
+/**
+ * Patchdump upload request (function 0x4F). UnO firmware responds with a
+ * full 2352-byte patchdump (ControlCenter allows 30s for it); stock
+ * firmware ignores it and requires the manual foot-switch transmit
+ * procedure instead.
+ */
+export function dumpRequestMessage(deviceId = 0x01): number[] {
+  return commandMessage(0x4f, deviceId);
+}
+
+/**
+ * Firmware version request (function 0x40). UnO and LG firmware reply with
+ * a 9-byte sysex (see parseVersionResponse); stock Behringer firmware does
+ * not reply at all — ControlCenter treats 5s of silence as "not UnO".
+ */
+export function versionRequestMessage(deviceId = 0x01): number[] {
+  return commandMessage(0x40, deviceId);
+}
+
+export interface FirmwareInfo {
+  /** Firmware family: UnO (fcb1010.uno) or the LG custom firmware. */
+  firmware: 'UnO' | 'LG';
+  /** Human-readable version, e.g. "1.0.3". */
+  version: string;
+  /** UnO >= 1.0.3: auto-answers dump requests, acks received dumps, chunked protocol. */
+  isUno103OrLater: boolean;
+  raw: number[];
+}
+
+/**
+ * Parse the reply to versionRequestMessage: `F0 00 20 32 <dev> 0C <ver> <fam> F7`.
+ * Byte 7 selects the firmware family, byte 6 the version. Decoding mirrors
+ * ControlCenter's parser: family 0x0F/0x1F is UnO (ver 3 = 1.0.3, else
+ * 1.0.2f), family 0x0E is UnO with ver as the patch digit (4 = 1.0.4),
+ * family 0x1E is UnO 1.0.2 pre-release builds, family 0x0D is LG firmware.
+ * Returns null for anything that is not a version reply.
+ */
+export function parseVersionResponse(data: readonly number[] | Uint8Array): FirmwareInfo | null {
+  if (data.length !== 9 || data[8] !== 0xf7) return null;
+  for (let i = 0; i < 6; i++) {
+    if (i !== 4 && data[i] !== HEADER[i]) return null;
+  }
+  const ver = data[6];
+  const fam = data[7];
+  const raw = [...data];
+  switch (fam) {
+    case 0x0f:
+    case 0x1f:
+      return ver === 3
+        ? { firmware: 'UnO', version: '1.0.3', isUno103OrLater: true, raw }
+        : { firmware: 'UnO', version: '1.0.2f', isUno103OrLater: false, raw };
+    case 0x0e:
+      if (ver <= 9) {
+        return { firmware: 'UnO', version: `1.0.${ver}`, isUno103OrLater: ver > 2, raw };
+      }
+      return { firmware: 'UnO', version: `1.0.2 (code ${ver})`, isUno103OrLater: false, raw };
+    case 0x1e:
+      return { firmware: 'UnO', version: `1.0.2 (code ${ver})`, isUno103OrLater: false, raw };
+    case 0x0d:
+      return { firmware: 'LG', version: `2.x (code ${ver})`, isUno103OrLater: false, raw };
+    default:
+      return null;
+  }
 }
 
 export function isFcbDump(data: readonly number[] | Uint8Array): boolean {

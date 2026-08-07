@@ -1,15 +1,23 @@
-import { Download, FilePlus2, FolderOpen, HardDriveDownload, Send } from 'lucide-react';
+import { Download, FilePlus2, FolderOpen, HardDriveDownload, Search, Send } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useDump } from '@/lib/fcb/DumpProvider';
-import { dumpRequestMessage, isFcbDump } from '@/lib/fcb/pack';
+import {
+  dumpRequestMessage,
+  type FirmwareInfo,
+  isFcbDump,
+  parseVersionResponse,
+  versionRequestMessage,
+} from '@/lib/fcb/pack';
 import { NO_OUTPUT, useMidi } from '@/lib/midi/MidiProvider';
 
 const SOURCE_LABELS = { file: 'from file', device: 'from pedal', default: 'new setup' } as const;
 
-/** A full dump is ~0.75s over DIN MIDI; allow generous slack before giving up. */
-const RECEIVE_TIMEOUT_MS = 6000;
+/** ControlCenter waits 30s for a requested patchdump. */
+const RECEIVE_TIMEOUT_MS = 30000;
+/** ControlCenter waits 5s for a version reply before assuming stock firmware. */
+const VERSION_TIMEOUT_MS = 5000;
 
 /**
  * Load / save / transfer actions for the current dump. "Receive from pedal"
@@ -24,12 +32,23 @@ export function DumpToolbar() {
   const [received, setReceived] = useState<{ bytes: number[]; portName: string } | null>(null);
   const [sendState, setSendState] = useState<'idle' | 'sent'>('idle');
   const [receiveState, setReceiveState] = useState<'idle' | 'waiting' | 'timeout'>('idle');
+  const [firmware, setFirmware] = useState<FirmwareInfo | 'detecting' | 'unknown' | null>(null);
   const waitingRef = useRef(false);
   const receiveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const detectingRef = useRef(false);
+  const versionTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return midi.subscribe((entry) => {
       if (entry.message.kind !== 'sysex') return;
+      if (detectingRef.current) {
+        const info = parseVersionResponse(entry.message.data);
+        if (info) {
+          detectingRef.current = false;
+          clearTimeout(versionTimerRef.current);
+          setFirmware(info);
+        }
+      }
       if (!isFcbDump(entry.message.data)) return;
       if (waitingRef.current) {
         // We asked for this dump — load it directly.
@@ -44,7 +63,10 @@ export function DumpToolbar() {
   }, [midi.subscribe, loadDump]);
 
   useEffect(() => {
-    return () => clearTimeout(receiveTimerRef.current);
+    return () => {
+      clearTimeout(receiveTimerRef.current);
+      clearTimeout(versionTimerRef.current);
+    };
   }, []);
 
   const openFile = () => fileInputRef.current?.click();
@@ -94,6 +116,17 @@ export function DumpToolbar() {
     }, RECEIVE_TIMEOUT_MS);
   };
 
+  const detectFirmware = () => {
+    midi.send(versionRequestMessage(dump?.deviceId));
+    detectingRef.current = true;
+    setFirmware('detecting');
+    clearTimeout(versionTimerRef.current);
+    versionTimerRef.current = setTimeout(() => {
+      detectingRef.current = false;
+      setFirmware('unknown');
+    }, VERSION_TIMEOUT_MS);
+  };
+
   const noOutput = midi.selectedOutputId === NO_OUTPUT;
 
   return (
@@ -131,6 +164,25 @@ export function DumpToolbar() {
           <Send />
           {sendState === 'sent' ? 'Sent!' : 'Send to pedal'}
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={detectFirmware}
+          disabled={noOutput || firmware === 'detecting'}
+          title={
+            noOutput
+              ? 'Select a MIDI output first'
+              : 'Ask the pedal which firmware it runs (UnO replies, stock stays silent)'
+          }
+        >
+          <Search />
+          {firmware === 'detecting' ? 'Detecting…' : 'Detect firmware'}
+        </Button>
+        {firmware !== null && firmware !== 'detecting' && (
+          <Badge variant={firmware === 'unknown' ? 'outline' : 'secondary'}>
+            {firmware === 'unknown' ? 'no reply — stock firmware?' : `${firmware.firmware} v${firmware.version}`}
+          </Badge>
+        )}
         {dump && (
           <Badge variant={dump.dirty ? 'default' : 'secondary'} className="ml-auto">
             {dump.dirty ? 'unsaved changes' : 'saved'} · {SOURCE_LABELS[dump.source]}

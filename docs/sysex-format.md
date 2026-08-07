@@ -79,17 +79,50 @@ dumps.
 
 ## Request commands
 
+Reverse-engineered from the official FCB/UnO ControlCenter binary (its sysex
+generator builds `F0 00 20 32 01 0C <fn> F7` from a constant pool
+`4F 40 10 0F F7`). Timeouts are ControlCenter's own.
+
 | Message | Meaning |
 | ------- | ------- |
-| `F0 00 20 32 <dev> 0C 0F F7` | Patchdump upload request: the dump header with no data. UnO firmware responds with a full patchdump (ControlCenter's "download" verify step uses this); stock firmware ignores it — the dump must be sent manually from the pedal (hold DOWN at power-on, then UP/ENTER in the sysex menu). Documented in JSynthLib's FCB1010 driver (`FCB1010_DUMP_REQ_ID`). |
-| `F0 00 20 32 01 0C 40 F7` | Firmware version check (Ripwerx-era community command). |
+| `F0 00 20 32 <dev> 0C 4F F7` | **Patchdump upload request.** UnO firmware answers with a full 2352-byte patchdump (30s timeout); stock firmware ignores it — the dump must be sent manually from the pedal (hold DOWN at power-on, then UP in the sysex menu). |
+| `F0 00 20 32 <dev> 0C 40 F7` | **Firmware version request.** UnO/LG firmware reply with the 9-byte version message below (5s timeout); stock firmware never replies — silence means stock. |
+| `F0 00 20 32 <dev> 0C 5n F7` | Request chunk *n* (0-15) of a chunked upload (`0x50 + n`). 30s timeout. |
+| `F0 00 20 32 <dev> 0C 10 …` | Chunked patchdump data message: 16 sysex messages of 160 bytes (128 data bytes each) instead of one 2352-byte dump. |
+
+> **Warning — do not send `F0 00 20 32 <dev> 0C 0F F7`.** `0x0F` is the
+> patchdump function itself; a data-less dump header is parsed by the pedal
+> as the *start of an incoming dump*, and it sits in sysex-receive mode with
+> MIDI output dead until power-cycled. (JSynthLib documents these bytes as a
+> dump request — that is wrong for UnO hardware.) On UnO 1.0.3+ the EEPROM
+> is only written after a *complete* dump, so no corruption results.
+
+### Version reply format
+
+`F0 00 20 32 <dev> 0C <ver> <fam> F7` (9 bytes). Byte 7 (`fam`) selects the
+firmware family, byte 6 (`ver`) the version:
+
+| `fam` | Firmware | `ver` meaning |
+| ----- | -------- | ------------- |
+| `0F` / `1F` | UnO | `03` → v1.0.3, else v1.0.2f |
+| `0E` | UnO | patch digit: `04` → v1.0.4 |
+| `1E` | UnO | v1.0.2 pre-release build codes (a–e) |
+| `0D` | LG custom firmware | LG v2.x build codes |
+
+ControlCenter enables the chunked protocol and dump acknowledge only when
+firmware is UnO with patch digit > 2 (i.e. v1.0.3+).
 
 ## UnO notes
 
-- UnO v1.0.3+ auto-receives dumps (no manual "enable sysex" step on the pedal).
-- UnO v1.0.3 optionally uses a chunked protocol: 16 sysex messages of 160
-  bytes instead of one 2352-byte dump (for flaky USB-MIDI interfaces). Not
-  yet supported here.
+- UnO v1.0.3+ auto-receives dumps — no manual "enable sysex" step on the
+  pedal (v1.0.2f and older require enabling SysEx Receive first), and the
+  pedal sends an acknowledge sysex after receiving a full or partial dump.
+- UnO v1.0.4 only changed expression-pedal behaviour (no hysteresis, full
+  CC resolution); its sysex protocol is identical to v1.0.3.
+- UnO v1.0.3 optionally uses the chunked protocol above (for flaky USB-MIDI
+  interfaces). Not yet supported here.
 - UnO keeps the full stock preset structure (PC1-5, CC1/2, ExpA/B, Note);
   its extras (stompbox mode, alternate CC values, momentary release) live in
-  the extension area above.
+  the extension area above. UnO ≤ v1.0.2f additionally supported note
+  transpose, sysex-send slots, and ExpA CC toggling (dropped in 1.0.3 to
+  restore PC4).

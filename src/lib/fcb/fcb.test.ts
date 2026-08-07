@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultMemory, getGlobal, getPreset, presetLabel, setGlobal, setPreset } from './model';
-import { DUMP_SIZE, dumpRequestMessage, HEADER, isFcbDump, MEMORY_SIZE, packDump, unpackDump } from './pack';
+import {
+  DUMP_SIZE,
+  dumpRequestMessage,
+  HEADER,
+  isFcbDump,
+  MEMORY_SIZE,
+  packDump,
+  parseVersionResponse,
+  unpackDump,
+  versionRequestMessage,
+} from './pack';
 
 /** A deterministic pseudo-random full dump exercising every bit position. */
 function syntheticDump(): Uint8Array {
@@ -31,14 +41,62 @@ describe('isFcbDump', () => {
   });
 });
 
-describe('dumpRequestMessage', () => {
-  it('is the dump header immediately terminated', () => {
-    expect(dumpRequestMessage()).toEqual([0xf0, 0x00, 0x20, 0x32, 0x01, 0x0c, 0x0f, 0xf7]);
+describe('request messages', () => {
+  it('dump request uses function 0x4F (never bare 0x0F, which wedges the pedal)', () => {
+    expect(dumpRequestMessage()).toEqual([0xf0, 0x00, 0x20, 0x32, 0x01, 0x0c, 0x4f, 0xf7]);
     expect(dumpRequestMessage(0x03)[4]).toBe(0x03);
+    expect(dumpRequestMessage()[6]).not.toBe(0x0f);
   });
 
-  it('is not itself mistaken for a dump', () => {
+  it('version request uses function 0x40', () => {
+    expect(versionRequestMessage()).toEqual([0xf0, 0x00, 0x20, 0x32, 0x01, 0x0c, 0x40, 0xf7]);
+  });
+
+  it('requests are not themselves mistaken for a dump', () => {
     expect(isFcbDump(dumpRequestMessage())).toBe(false);
+    expect(isFcbDump(versionRequestMessage())).toBe(false);
+  });
+});
+
+describe('parseVersionResponse', () => {
+  const reply = (ver: number, fam: number) => [0xf0, 0x00, 0x20, 0x32, 0x01, 0x0c, ver, fam, 0xf7];
+
+  it('decodes UnO 1.0.3 and 1.0.2f (family 0x0F/0x1F)', () => {
+    expect(parseVersionResponse(reply(3, 0x0f))).toMatchObject({
+      firmware: 'UnO',
+      version: '1.0.3',
+      isUno103OrLater: true,
+    });
+    expect(parseVersionResponse(reply(2, 0x1f))).toMatchObject({
+      firmware: 'UnO',
+      version: '1.0.2f',
+      isUno103OrLater: false,
+    });
+  });
+
+  it('decodes UnO patch digits (family 0x0E)', () => {
+    expect(parseVersionResponse(reply(4, 0x0e))).toMatchObject({
+      firmware: 'UnO',
+      version: '1.0.4',
+      isUno103OrLater: true,
+    });
+  });
+
+  it('decodes LG firmware (family 0x0D)', () => {
+    expect(parseVersionResponse(reply(7, 0x0d))).toMatchObject({ firmware: 'LG', isUno103OrLater: false });
+  });
+
+  it('rejects non-version messages', () => {
+    expect(parseVersionResponse(dumpRequestMessage())).toBeNull();
+    expect(parseVersionResponse(reply(3, 0x22))).toBeNull();
+    expect(parseVersionResponse([0xf0, 0xf7])).toBeNull();
+    expect(parseVersionResponse(syntheticDump())).toBeNull();
+  });
+
+  it('accepts any device id at byte 4', () => {
+    const bytes = reply(3, 0x0f);
+    bytes[4] = 0x00;
+    expect(parseVersionResponse(bytes)).not.toBeNull();
   });
 });
 
