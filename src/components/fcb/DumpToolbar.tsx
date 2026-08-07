@@ -10,6 +10,7 @@ import {
   parseVersionResponse,
   versionRequestMessage,
 } from '@/lib/fcb/pack';
+import { toHex } from '@/lib/midi/decode';
 import { NO_OUTPUT, useMidi } from '@/lib/midi/MidiProvider';
 
 const SOURCE_LABELS = { file: 'from file', device: 'from pedal', default: 'new setup' } as const;
@@ -18,6 +19,15 @@ const SOURCE_LABELS = { file: 'from file', device: 'from pedal', default: 'new s
 const RECEIVE_TIMEOUT_MS = 30000;
 /** ControlCenter waits 5s for a version reply before assuming stock firmware. */
 const VERSION_TIMEOUT_MS = 5000;
+
+type DetectState =
+  | null
+  | 'detecting'
+  | { kind: 'ok'; info: FirmwareInfo }
+  /** Nothing came back at all — no working two-way MIDI link. */
+  | { kind: 'silent' }
+  /** Sysex arrived during the detect window but was not a version reply. */
+  | { kind: 'unrecognized'; hex: string };
 
 /**
  * Load / save / transfer actions for the current dump. "Receive from pedal"
@@ -31,11 +41,13 @@ export function DumpToolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [received, setReceived] = useState<{ bytes: number[]; portName: string } | null>(null);
   const [sendState, setSendState] = useState<'idle' | 'sent'>('idle');
-  const [receiveState, setReceiveState] = useState<'idle' | 'waiting' | 'timeout'>('idle');
-  const [firmware, setFirmware] = useState<FirmwareInfo | 'detecting' | 'unknown' | null>(null);
+  const [receiveState, setReceiveState] = useState<'idle' | 'waiting' | 'timeout' | 'sendfailed'>('idle');
+  const [detectState, setDetectState] = useState<DetectState>(null);
   const waitingRef = useRef(false);
   const receiveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const detectingRef = useRef(false);
+  /** Sysex seen while detecting that was not a version reply (for diagnostics). */
+  const strayReplyRef = useRef<readonly number[] | null>(null);
   const versionTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -46,7 +58,9 @@ export function DumpToolbar() {
         if (info) {
           detectingRef.current = false;
           clearTimeout(versionTimerRef.current);
-          setFirmware(info);
+          setDetectState({ kind: 'ok', info });
+        } else {
+          strayReplyRef.current = entry.message.data;
         }
       }
       if (!isFcbDump(entry.message.data)) return;
@@ -97,7 +111,10 @@ export function DumpToolbar() {
   const sendToPedal = () => {
     const sysex = toSysex();
     if (!sysex) return;
-    midi.send(Array.from(sysex));
+    if (!midi.send(Array.from(sysex))) {
+      setReceiveState('sendfailed');
+      return;
+    }
     setSendState('sent');
     setTimeout(() => setSendState('idle'), 2500);
   };
@@ -106,7 +123,10 @@ export function DumpToolbar() {
     if (dump?.dirty && !confirm('You have unsaved changes that will be replaced by the pedal’s setup. Continue?')) {
       return;
     }
-    midi.send(dumpRequestMessage(dump?.deviceId));
+    if (!midi.send(dumpRequestMessage(dump?.deviceId))) {
+      setReceiveState('sendfailed');
+      return;
+    }
     waitingRef.current = true;
     setReceiveState('waiting');
     clearTimeout(receiveTimerRef.current);
@@ -117,17 +137,31 @@ export function DumpToolbar() {
   };
 
   const detectFirmware = () => {
-    midi.send(versionRequestMessage(dump?.deviceId));
+    if (!midi.send(versionRequestMessage(dump?.deviceId))) {
+      setReceiveState('sendfailed');
+      return;
+    }
     detectingRef.current = true;
-    setFirmware('detecting');
+    strayReplyRef.current = null;
+    setDetectState('detecting');
     clearTimeout(versionTimerRef.current);
     versionTimerRef.current = setTimeout(() => {
       detectingRef.current = false;
-      setFirmware('unknown');
+      const stray = strayReplyRef.current;
+      setDetectState(stray ? { kind: 'unrecognized', hex: toHex([...stray]) } : { kind: 'silent' });
     }, VERSION_TIMEOUT_MS);
   };
 
   const noOutput = midi.selectedOutputId === NO_OUTPUT;
+  // The saved output id can go stale (unplugged, or the OS re-enumerated the
+  // port under a new id) — the button would otherwise "send" into the void.
+  const outputMissing = !noOutput && !midi.outputs.some((output) => output.id === midi.selectedOutputId);
+  const outputUnavailable = noOutput || outputMissing;
+  const outputHint = noOutput
+    ? 'Select a MIDI output first (the request is sent to the pedal)'
+    : outputMissing
+      ? 'The selected MIDI output is no longer connected — re-select it on the Monitor page'
+      : undefined;
 
   return (
     <div className="flex flex-col gap-3">
@@ -148,8 +182,8 @@ export function DumpToolbar() {
           variant="outline"
           size="sm"
           onClick={receiveFromPedal}
-          disabled={noOutput || receiveState === 'waiting'}
-          title={noOutput ? 'Select a MIDI output first (the request is sent to the pedal)' : undefined}
+          disabled={outputUnavailable || receiveState === 'waiting'}
+          title={outputHint}
         >
           <HardDriveDownload />
           {receiveState === 'waiting' ? 'Waiting for pedal…' : 'Receive from pedal'}
@@ -158,8 +192,8 @@ export function DumpToolbar() {
           variant="outline"
           size="sm"
           onClick={sendToPedal}
-          disabled={!dump || noOutput}
-          title={noOutput ? 'Select a MIDI output first' : undefined}
+          disabled={!dump || outputUnavailable}
+          title={outputHint}
         >
           <Send />
           {sendState === 'sent' ? 'Sent!' : 'Send to pedal'}
@@ -168,15 +202,19 @@ export function DumpToolbar() {
           variant="outline"
           size="sm"
           onClick={detectFirmware}
-          disabled={noOutput || firmware === 'detecting'}
-          title={noOutput ? 'Select a MIDI output first' : 'Ask the pedal which firmware it runs'}
+          disabled={outputUnavailable || detectState === 'detecting'}
+          title={outputHint ?? 'Ask the pedal which firmware it runs'}
         >
           <Search />
-          {firmware === 'detecting' ? 'Detecting…' : 'Detect firmware'}
+          {detectState === 'detecting' ? 'Detecting…' : 'Detect firmware'}
         </Button>
-        {firmware !== null && firmware !== 'detecting' && (
-          <Badge variant={firmware === 'unknown' ? 'outline' : 'secondary'}>
-            {firmware === 'unknown' ? 'no reply — check MIDI in+out' : `${firmware.firmware} v${firmware.version}`}
+        {detectState !== null && detectState !== 'detecting' && (
+          <Badge variant={detectState.kind === 'ok' ? 'secondary' : 'outline'}>
+            {detectState.kind === 'ok'
+              ? `${detectState.info.firmware} v${detectState.info.version}`
+              : detectState.kind === 'unrecognized'
+                ? `unrecognized reply: ${detectState.hex}`
+                : 'no reply — check MIDI in+out'}
           </Badge>
         )}
         {dump && (
@@ -186,6 +224,18 @@ export function DumpToolbar() {
         )}
       </div>
       <input ref={fileInputRef} type="file" accept=".syx,audio/midi" hidden onChange={onFileChosen} />
+
+      {receiveState === 'sendfailed' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">
+          <span>
+            Nothing was sent — the selected MIDI output is no longer available (unplugged, or its id changed). Re-select
+            the output on the <span className="font-medium">Monitor</span> page and try again.
+          </span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setReceiveState('idle')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       {receiveState === 'timeout' && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">

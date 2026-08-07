@@ -112,6 +112,14 @@ firmware family, byte 6 (`code`) the version:
 ControlCenter enables the chunked protocol and dump acknowledge only when
 firmware is UnO with patch digit > 2 (i.e. v1.0.3+).
 
+ControlCenter's connect sequence actually starts one step earlier: it first
+sends `F0 7E 7E 30 F7`, a universal-sysex identity hello for the LG-series
+devices it also supports (LGM/LG/LGX — their reply is 11/12/48 bytes and
+compared against a separate constant table). The FCB1010 never answers it;
+after the 5s timeout ControlCenter falls through to the `0x40` version
+request. So `0x40` alone, with no prior handshake, is the correct FCB1010
+detection message.
+
 ### Manual foot-switch procedures (stock manual §2.7)
 
 - **Transmit dump from pedal**: power on holding DOWN (~2.5s) to enter

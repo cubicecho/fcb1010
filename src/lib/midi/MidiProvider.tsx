@@ -27,8 +27,12 @@ interface MidiContextValue {
   setSelectedOutputId: (id: string) => void;
   /** Subscribe to decoded messages from the selected input(s). Returns unsubscribe. */
   subscribe: (listener: (entry: MonitorEntry) => void) => () => void;
-  /** Send raw bytes to the selected output. No-op when no output selected. */
-  send: (data: number[]) => void;
+  /**
+   * Send raw bytes to the selected output. Returns false when no output is
+   * selected or the selected port is gone (unplugged / id changed since it
+   * was saved) — callers must surface that instead of waiting on a reply.
+   */
+  send: (data: number[]) => boolean;
   retry: () => void;
 }
 
@@ -150,8 +154,11 @@ export function MidiProvider({ children }: { children: ReactNode }) {
 
   const send = useCallback(
     (data: number[]) => {
-      if (selectedOutputId === NO_OUTPUT) return;
-      WebMidi.outputs.find((output) => output.id === selectedOutputId)?.send(data);
+      if (selectedOutputId === NO_OUTPUT) return false;
+      const output = WebMidi.outputs.find((candidate) => candidate.id === selectedOutputId);
+      if (!output) return false;
+      output.send(data);
+      return true;
     },
     [selectedOutputId],
   );
