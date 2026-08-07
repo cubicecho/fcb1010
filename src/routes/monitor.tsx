@@ -1,19 +1,45 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Trash2 } from 'lucide-react';
+import { Pause, Play, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PortSelectors } from '@/components/midi/PortSelectors';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { kindLabel, toHex } from '@/lib/midi/decode';
 import { useMidi } from '@/lib/midi/MidiProvider';
-import { type MonitorEntry, NOISY_KINDS } from '@/lib/midi/types';
+import { type MidiMessageKind, type MonitorEntry, NOISY_KINDS } from '@/lib/midi/types';
 
 const MAX_ENTRIES = 1000;
 const FLUSH_INTERVAL_MS = 100;
 const MAX_HEX_BYTES = 24;
+
+type DirectionFilter = 'all' | 'in' | 'out';
+
+const TYPE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All types' },
+  { value: 'programchange', label: 'Program Change' },
+  { value: 'controlchange', label: 'Control Change' },
+  { value: 'note', label: 'Notes' },
+  { value: 'sysex', label: 'SysEx' },
+  { value: 'other', label: 'Other' },
+] as const;
+type TypeFilter = (typeof TYPE_FILTER_OPTIONS)[number]['value'];
+
+function matchesType(kind: MidiMessageKind, filter: TypeFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'note':
+      return kind === 'noteon' || kind === 'noteoff';
+    case 'other':
+      return !['programchange', 'controlchange', 'noteon', 'noteoff', 'sysex'].includes(kind);
+    default:
+      return kind === filter;
+  }
+}
 
 function formatTime(timestamp: number): string {
   const date = new Date(performance.timeOrigin + timestamp);
@@ -34,13 +60,19 @@ function MonitorPage() {
   const [entries, setEntries] = useState<MonitorEntry[]>([]);
   const [totalReceived, setTotalReceived] = useState(0);
   const [showNoisy, setShowNoisy] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
 
   const bufferRef = useRef<MonitorEntry[]>([]);
   const showNoisyRef = useRef(showNoisy);
   showNoisyRef.current = showNoisy;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     const unsubscribe = subscribe((entry) => {
+      if (pausedRef.current) return;
       if (!showNoisyRef.current && NOISY_KINDS.has(entry.message.kind)) return;
       bufferRef.current.push(entry);
     });
@@ -65,6 +97,12 @@ function MonitorPage() {
     setTotalReceived(0);
   };
 
+  // Filters apply to the display only — captured history stays intact.
+  const visible = entries.filter(
+    (entry) =>
+      (directionFilter === 'all' || entry.direction === directionFilter) && matchesType(entry.message.kind, typeFilter),
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -77,11 +115,37 @@ function MonitorPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-end justify-between gap-4">
           <PortSelectors />
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <label htmlFor="show-noisy" className="flex items-center gap-2 text-sm">
               <Switch id="show-noisy" checked={showNoisy} onCheckedChange={setShowNoisy} />
               Show clock / active sensing
             </label>
+            <Select value={directionFilter} onValueChange={(value) => setDirectionFilter(value as DirectionFilter)}>
+              <SelectTrigger size="sm" className="w-28" aria-label="Direction filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">In + out</SelectItem>
+                <SelectItem value="in">In only</SelectItem>
+                <SelectItem value="out">Out only</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as TypeFilter)}>
+              <SelectTrigger size="sm" className="w-40" aria-label="Message type filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TYPE_FILTER_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => setPaused((value) => !value)}>
+              {paused ? <Play /> : <Pause />}
+              {paused ? 'Resume' : 'Pause'}
+            </Button>
             <Button variant="outline" size="sm" onClick={clear}>
               <Trash2 />
               Clear
@@ -117,13 +181,16 @@ function MonitorPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Messages</CardTitle>
           <span className="text-xs text-muted-foreground">
-            {entries.length} shown · {totalReceived} received
+            {paused && <span className="mr-2 font-medium text-foreground">paused</span>}
+            {visible.length} shown · {totalReceived} received
           </span>
         </CardHeader>
         <CardContent>
-          {entries.length === 0 ? (
+          {visible.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              No messages yet. Connect your FCB1010 and press a footswitch.
+              {entries.length === 0
+                ? 'No messages yet. Connect your FCB1010 and press a footswitch.'
+                : 'No messages match the current filters.'}
             </p>
           ) : (
             <div className="max-h-[60vh] overflow-auto rounded-md border">
@@ -140,7 +207,7 @@ function MonitorPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {entries.map((entry) => (
+                  {visible.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {formatTime(entry.timestamp)}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useDump } from '@/lib/fcb/DumpProvider';
+import { useFirmware } from '@/lib/fcb/FirmwareProvider';
 import {
   dumpRequestMessage,
   type FirmwareInfo,
@@ -42,6 +43,7 @@ type DetectState =
  */
 export function DumpToolbar() {
   const { dump, loadDump, loadDefault, toSysex, markClean, undo, redo, canUndo, canRedo } = useDump();
+  const { setFirmware } = useFirmware();
   const midi = useMidi();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [received, setReceived] = useState<{ bytes: number[]; portName: string } | null>(null);
@@ -68,6 +70,7 @@ export function DumpToolbar() {
           detectingRef.current = false;
           clearTimeout(versionTimerRef.current);
           setDetectState({ kind: 'ok', info });
+          setFirmware(info);
         } else {
           strayReplyRef.current = entry.message.data;
         }
@@ -94,7 +97,7 @@ export function DumpToolbar() {
       }
       setReceived({ bytes: [...entry.message.data], portName: entry.portName });
     });
-  }, [midi.subscribe, loadDump, markClean]);
+  }, [midi.subscribe, loadDump, markClean, setFirmware]);
 
   useEffect(() => {
     return () => {

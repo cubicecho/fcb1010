@@ -1,4 +1,5 @@
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router';
+import { FirmwareBadge } from '@/components/fcb/FirmwareBadge';
 import { MidiStatusBadge } from '@/components/midi/MidiStatusBadge';
 
 const NAV_ITEMS = [
@@ -27,7 +28,8 @@ function RootLayout() {
               </Link>
             ))}
           </nav>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <FirmwareBadge />
             <MidiStatusBadge />
           </div>
         </div>
