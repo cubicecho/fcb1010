@@ -27,65 +27,89 @@ function commandMessage(fn: number, deviceId: number): number[] {
 }
 
 /**
- * Patchdump upload request (function 0x4F). UnO firmware responds with a
- * full 2352-byte patchdump (ControlCenter allows 30s for it); stock
- * firmware ignores it and requires the manual foot-switch transmit
- * procedure instead.
+ * Patchdump upload request (function 0x4F). The pedal responds with a full
+ * 2352-byte patchdump (ControlCenter allows 30s for it) — this is how
+ * ControlCenter receives dumps on both UnO and stock Behringer firmware.
+ * Fallback: the pedal can also transmit manually via global config
+ * (power on holding DOWN, press UP until the CONFIG row, footswitch 6).
  */
 export function dumpRequestMessage(deviceId = 0x01): number[] {
   return commandMessage(0x4f, deviceId);
 }
 
 /**
- * Firmware version request (function 0x40). UnO and LG firmware reply with
- * a 9-byte sysex (see parseVersionResponse); stock Behringer firmware does
- * not reply at all — ControlCenter treats 5s of silence as "not UnO".
+ * Firmware version request (function 0x40). UnO firmware and stock
+ * Behringer firmware (at least v2.4+) reply with a 9-byte sysex (see
+ * parseVersionResponse). ControlCenter uses this as its connection check
+ * with a 5s timeout — silence means no working two-way MIDI link.
  */
 export function versionRequestMessage(deviceId = 0x01): number[] {
   return commandMessage(0x40, deviceId);
 }
 
 export interface FirmwareInfo {
-  /** Firmware family: UnO (fcb1010.uno) or the LG custom firmware. */
-  firmware: 'UnO' | 'LG';
-  /** Human-readable version, e.g. "1.0.3". */
+  /** Firmware family: UnO (fcb1010.uno) or stock Behringer. */
+  firmware: 'UnO' | 'Behringer';
+  /** Human-readable version, e.g. "1.0.3" or "2.4.1C". */
   version: string;
-  /** UnO >= 1.0.3: auto-answers dump requests, acks received dumps, chunked protocol. */
+  /** UnO >= 1.0.3: dumps always enabled, acks received dumps, chunked protocol. */
   isUno103OrLater: boolean;
   raw: number[];
 }
 
+/** UnO version table, indexed by the reply's version code (family 0x0E; family 0x1E codes are offset by -5). */
+const UNO_VERSIONS = ['1.0.0', '1.0.1', '1.0.2a', '1.0.2b', '1.0.2c', '1.0.2d', '1.0.2e', '1.0.2f', '1.0.3', '1.0.4'];
+
+/** Stock Behringer version table, indexed by the reply's version code (family 0x0D). */
+const BEHRINGER_VERSIONS: Record<number, string> = {
+  5: '1.0',
+  13: '2.1',
+  14: '2.2',
+  18: '2.3.12',
+  27: '2.4.1B',
+  28: '2.4.1C',
+  29: '2.4.1D',
+  30: '2.5',
+};
+
 /**
  * Parse the reply to versionRequestMessage: `F0 00 20 32 <dev> 0C <ver> <fam> F7`.
- * Byte 7 selects the firmware family, byte 6 the version. Decoding mirrors
- * ControlCenter's parser: family 0x0F/0x1F is UnO (ver 3 = 1.0.3, else
- * 1.0.2f), family 0x0E is UnO with ver as the patch digit (4 = 1.0.4),
- * family 0x1E is UnO 1.0.2 pre-release builds, family 0x0D is LG firmware.
- * Returns null for anything that is not a version reply.
+ * Byte 7 selects the firmware family, byte 6 the version code. Decoding
+ * mirrors ControlCenter's parser: family 0x0F/0x1F is UnO (code 3 = 1.0.3,
+ * anything else 1.0.2f), family 0x0E/0x1E is UnO with a code table
+ * (8 = 1.0.3, 9 = 1.0.4, 2-7 = 1.0.2a-f), family 0x0D is stock Behringer
+ * (27-29 = 2.4.1B-D, 30 = 2.5). Returns null for anything that is not a
+ * version reply.
  */
 export function parseVersionResponse(data: readonly number[] | Uint8Array): FirmwareInfo | null {
   if (data.length !== 9 || data[8] !== 0xf7) return null;
   for (let i = 0; i < 6; i++) {
     if (i !== 4 && data[i] !== HEADER[i]) return null;
   }
-  const ver = data[6];
+  const code = data[6];
   const fam = data[7];
   const raw = [...data];
+  const uno = (version: string): FirmwareInfo => ({
+    firmware: 'UnO',
+    version,
+    isUno103OrLater: version === '1.0.3' || version === '1.0.4',
+    raw,
+  });
   switch (fam) {
     case 0x0f:
     case 0x1f:
-      return ver === 3
-        ? { firmware: 'UnO', version: '1.0.3', isUno103OrLater: true, raw }
-        : { firmware: 'UnO', version: '1.0.2f', isUno103OrLater: false, raw };
+      return uno(code === 3 ? '1.0.3' : '1.0.2f');
     case 0x0e:
-      if (ver <= 9) {
-        return { firmware: 'UnO', version: `1.0.${ver}`, isUno103OrLater: ver > 2, raw };
-      }
-      return { firmware: 'UnO', version: `1.0.2 (code ${ver})`, isUno103OrLater: false, raw };
+      return uno(UNO_VERSIONS[code] ?? '1.0.2');
     case 0x1e:
-      return { firmware: 'UnO', version: `1.0.2 (code ${ver})`, isUno103OrLater: false, raw };
+      return uno(UNO_VERSIONS[code + 5] ?? '1.0.2');
     case 0x0d:
-      return { firmware: 'LG', version: `2.x (code ${ver})`, isUno103OrLater: false, raw };
+      return {
+        firmware: 'Behringer',
+        version: BEHRINGER_VERSIONS[code] ?? `2.x (code ${code})`,
+        isUno103OrLater: false,
+        raw,
+      };
     default:
       return null;
   }

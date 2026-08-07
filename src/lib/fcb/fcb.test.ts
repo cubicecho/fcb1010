@@ -74,16 +74,24 @@ describe('parseVersionResponse', () => {
     });
   });
 
-  it('decodes UnO patch digits (family 0x0E)', () => {
-    expect(parseVersionResponse(reply(4, 0x0e))).toMatchObject({
+  it('decodes UnO version codes (family 0x0E and offset family 0x1E)', () => {
+    expect(parseVersionResponse(reply(9, 0x0e))).toMatchObject({
       firmware: 'UnO',
       version: '1.0.4',
       isUno103OrLater: true,
     });
+    expect(parseVersionResponse(reply(8, 0x0e))).toMatchObject({ version: '1.0.3', isUno103OrLater: true });
+    expect(parseVersionResponse(reply(7, 0x0e))).toMatchObject({ version: '1.0.2f', isUno103OrLater: false });
+    expect(parseVersionResponse(reply(3, 0x1e))).toMatchObject({ version: '1.0.3', isUno103OrLater: true });
   });
 
-  it('decodes LG firmware (family 0x0D)', () => {
-    expect(parseVersionResponse(reply(7, 0x0d))).toMatchObject({ firmware: 'LG', isUno103OrLater: false });
+  it('decodes stock Behringer firmware (family 0x0D)', () => {
+    expect(parseVersionResponse(reply(28, 0x0d))).toMatchObject({
+      firmware: 'Behringer',
+      version: '2.4.1C',
+      isUno103OrLater: false,
+    });
+    expect(parseVersionResponse(reply(30, 0x0d))).toMatchObject({ firmware: 'Behringer', version: '2.5' });
   });
 
   it('rejects non-version messages', () => {

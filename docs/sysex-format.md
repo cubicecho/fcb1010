@@ -85,8 +85,8 @@ generator builds `F0 00 20 32 01 0C <fn> F7` from a constant pool
 
 | Message | Meaning |
 | ------- | ------- |
-| `F0 00 20 32 <dev> 0C 4F F7` | **Patchdump upload request.** UnO firmware answers with a full 2352-byte patchdump (30s timeout); stock firmware ignores it — the dump must be sent manually from the pedal (hold DOWN at power-on, then UP in the sysex menu). |
-| `F0 00 20 32 <dev> 0C 40 F7` | **Firmware version request.** UnO/LG firmware reply with the 9-byte version message below (5s timeout); stock firmware never replies — silence means stock. |
+| `F0 00 20 32 <dev> 0C 4F F7` | **Patchdump upload request.** The pedal answers with a full 2352-byte patchdump (30s timeout). ControlCenter uses this for both UnO and stock Behringer firmware; its download flow also re-requests an upload afterwards to verify byte-by-byte. |
+| `F0 00 20 32 <dev> 0C 40 F7` | **Firmware version request.** The pedal replies with the 9-byte version message below (5s timeout) — ControlCenter's connection check, with reply decodings for both UnO and stock (v2.x) firmware. Silence means no working two-way MIDI link. |
 | `F0 00 20 32 <dev> 0C 5n F7` | Request chunk *n* (0-15) of a chunked upload (`0x50 + n`). 30s timeout. |
 | `F0 00 20 32 <dev> 0C 10 …` | Chunked patchdump data message: 16 sysex messages of 160 bytes (128 data bytes each) instead of one 2352-byte dump. |
 
@@ -99,18 +99,29 @@ generator builds `F0 00 20 32 01 0C <fn> F7` from a constant pool
 
 ### Version reply format
 
-`F0 00 20 32 <dev> 0C <ver> <fam> F7` (9 bytes). Byte 7 (`fam`) selects the
-firmware family, byte 6 (`ver`) the version:
+`F0 00 20 32 <dev> 0C <code> <fam> F7` (9 bytes). Byte 7 (`fam`) selects the
+firmware family, byte 6 (`code`) the version:
 
-| `fam` | Firmware | `ver` meaning |
-| ----- | -------- | ------------- |
-| `0F` / `1F` | UnO | `03` → v1.0.3, else v1.0.2f |
-| `0E` | UnO | patch digit: `04` → v1.0.4 |
-| `1E` | UnO | v1.0.2 pre-release build codes (a–e) |
-| `0D` | LG custom firmware | LG v2.x build codes |
+| `fam` | Firmware | `code` meaning |
+| ----- | -------- | -------------- |
+| `0F` / `1F` | UnO | `03` → v1.0.3, anything else → v1.0.2f |
+| `0E` | UnO | table: 0 → 1.0.0, 1 → 1.0.1, 2–7 → 1.0.2a–f, 8 → 1.0.3, 9 → 1.0.4 |
+| `1E` | UnO | same table as `0E`, offset by −5 (code 3 → 1.0.3, 4 → 1.0.4) |
+| `0D` | stock Behringer | 5 → 1.0, 13 → 2.1, 14 → 2.2, 18 → 2.3.12, 27–29 → 2.4.1B–D, 30 → 2.5 |
 
 ControlCenter enables the chunked protocol and dump acknowledge only when
 firmware is UnO with patch digit > 2 (i.e. v1.0.3+).
+
+### Manual foot-switch procedures (stock manual §2.7)
+
+- **Transmit dump from pedal**: power on holding DOWN (~2.5s) to enter
+  global config, press UP until the CONFIG row LED lights, then press
+  **footswitch 6** — the pedal sends the 2352-byte dump. Long-press DOWN to
+  exit.
+- **Receive dump on stock / UnO ≤ 1.0.2f**: same menu, press **footswitch 7
+  (SYSEX RCV)** first to arm reception, then send the dump; afterwards
+  long-press DOWN (~3s, display counts 9→0) to store it. UnO 1.0.3+ needs
+  none of this — reception is always enabled and storage is automatic.
 
 ## UnO notes
 

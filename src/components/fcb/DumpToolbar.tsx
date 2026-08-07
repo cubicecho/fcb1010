@@ -169,18 +169,14 @@ export function DumpToolbar() {
           size="sm"
           onClick={detectFirmware}
           disabled={noOutput || firmware === 'detecting'}
-          title={
-            noOutput
-              ? 'Select a MIDI output first'
-              : 'Ask the pedal which firmware it runs (UnO replies, stock stays silent)'
-          }
+          title={noOutput ? 'Select a MIDI output first' : 'Ask the pedal which firmware it runs'}
         >
           <Search />
           {firmware === 'detecting' ? 'Detecting…' : 'Detect firmware'}
         </Button>
         {firmware !== null && firmware !== 'detecting' && (
           <Badge variant={firmware === 'unknown' ? 'outline' : 'secondary'}>
-            {firmware === 'unknown' ? 'no reply — stock firmware?' : `${firmware.firmware} v${firmware.version}`}
+            {firmware === 'unknown' ? 'no reply — check MIDI in+out' : `${firmware.firmware} v${firmware.version}`}
           </Badge>
         )}
         {dump && (
@@ -194,9 +190,11 @@ export function DumpToolbar() {
       {receiveState === 'timeout' && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">
           <span>
-            No patchdump received. Check that both MIDI input and output are connected to the pedal. Stock firmware
-            ignores the request — on the pedal, hold <span className="font-medium">DOWN</span> at power-on, then press{' '}
-            <span className="font-medium">UP</span> to transmit manually; the dump will be picked up here.
+            No patchdump received. Check that both MIDI input and output are connected to the pedal (try{' '}
+            <span className="font-medium">Detect firmware</span> to verify the link). Manual fallback: power the pedal
+            on holding <span className="font-medium">DOWN</span>, press <span className="font-medium">UP</span> until
+            the CONFIG row is lit, then press footswitch <span className="font-medium">6</span> to transmit — the dump
+            will be picked up here.
           </span>
           <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setReceiveState('idle')}>
             Dismiss
