@@ -13,9 +13,10 @@ function EmptyState() {
         <CardTitle>No dump loaded</CardTitle>
         <CardDescription>
           Start editing by creating a new setup (<span className="font-medium">New</span>), opening a saved{' '}
-          <span className="font-medium">.syx</span> file, or receiving a patchdump from the pedal: connect the FCB1010
-          via MIDI, select its input on the Monitor page, then trigger a dump from the pedal (hold DOWN while powering
-          on, press UP/ENTER to reach the sysex send function).
+          <span className="font-medium">.syx</span> file, or pulling the current setup from the board: connect the
+          FCB1010 via MIDI, pick its input and output on the Monitor page, then click{' '}
+          <span className="font-medium">Receive from pedal</span>. On UnO firmware the pedal responds automatically; on
+          stock firmware trigger the dump manually instead (hold DOWN while powering on, then press UP).
         </CardDescription>
       </CardHeader>
     </Card>

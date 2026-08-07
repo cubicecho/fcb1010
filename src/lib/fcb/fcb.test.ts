@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultMemory, getGlobal, getPreset, presetLabel, setGlobal, setPreset } from './model';
-import { DUMP_SIZE, HEADER, isFcbDump, MEMORY_SIZE, packDump, unpackDump } from './pack';
+import { DUMP_SIZE, dumpRequestMessage, HEADER, isFcbDump, MEMORY_SIZE, packDump, unpackDump } from './pack';
 
 /** A deterministic pseudo-random full dump exercising every bit position. */
 function syntheticDump(): Uint8Array {
@@ -28,6 +28,17 @@ describe('isFcbDump', () => {
     const dump = syntheticDump();
     dump[5] = 0x0d;
     expect(isFcbDump(dump)).toBe(false);
+  });
+});
+
+describe('dumpRequestMessage', () => {
+  it('is the dump header immediately terminated', () => {
+    expect(dumpRequestMessage()).toEqual([0xf0, 0x00, 0x20, 0x32, 0x01, 0x0c, 0x0f, 0xf7]);
+    expect(dumpRequestMessage(0x03)[4]).toBe(0x03);
+  });
+
+  it('is not itself mistaken for a dump', () => {
+    expect(isFcbDump(dumpRequestMessage())).toBe(false);
   });
 });
 

@@ -77,6 +77,13 @@ dumps.
 | 2046 | ExpB calibration min |
 | 2047 | ExpB calibration max |
 
+## Request commands
+
+| Message | Meaning |
+| ------- | ------- |
+| `F0 00 20 32 <dev> 0C 0F F7` | Patchdump upload request: the dump header with no data. UnO firmware responds with a full patchdump (ControlCenter's "download" verify step uses this); stock firmware ignores it — the dump must be sent manually from the pedal (hold DOWN at power-on, then UP/ENTER in the sysex menu). Documented in JSynthLib's FCB1010 driver (`FCB1010_DUMP_REQ_ID`). |
+| `F0 00 20 32 01 0C 40 F7` | Firmware version check (Ripwerx-era community command). |
+
 ## UnO notes
 
 - UnO v1.0.3+ auto-receives dumps (no manual "enable sysex" step on the pedal).

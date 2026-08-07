@@ -11,6 +11,18 @@ const DATA_START = HEADER.length;
 const DATA_END = DUMP_SIZE - 1;
 const RUN = 8;
 
+/**
+ * Patchdump upload request: the dump header with no data, terminated
+ * immediately. UnO firmware responds with a full 2352-byte patchdump
+ * (this is what ControlCenter's "download" uses); stock firmware ignores
+ * it and requires the manual foot-switch transmit procedure instead.
+ */
+export function dumpRequestMessage(deviceId = 0x01): number[] {
+  const message = [...HEADER, 0xf7];
+  message[4] = deviceId & 0x7f;
+  return message;
+}
+
 export function isFcbDump(data: readonly number[] | Uint8Array): boolean {
   if (data.length !== DUMP_SIZE) return false;
   if (data[DUMP_SIZE - 1] !== 0xf7) return false;
