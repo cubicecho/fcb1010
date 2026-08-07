@@ -191,6 +191,26 @@ export function setGlobal(memory: Uint8Array, global: FcbGlobal): void {
   memory[GLOBAL_CALIBRATION + 3] = (memory[GLOBAL_CALIBRATION + 3] & 0x80) | (global.expBCalibrationMax & 0x7f);
 }
 
+/** A preset with every function switched off (values left at friendly defaults). */
+export function createEmptyPreset(): FcbPreset {
+  return {
+    pc: [
+      { enabled: false, program: 0 },
+      { enabled: false, program: 0 },
+      { enabled: false, program: 0 },
+      { enabled: false, program: 0 },
+      { enabled: false, program: 0 },
+    ],
+    cc1: { enabled: false, controller: 0, value: 0 },
+    cc2: { enabled: false, controller: 0, value: 0 },
+    switch1: false,
+    switch2: false,
+    expA: { enabled: false, controller: 27, min: 0, max: 127 },
+    expB: { enabled: false, controller: 7, min: 0, max: 127 },
+    note: { enabled: false, value: 60 },
+  };
+}
+
 /**
  * A fresh memory image resembling factory defaults: each preset sends its
  * own number as PC1 and has both expression pedals active, everything else

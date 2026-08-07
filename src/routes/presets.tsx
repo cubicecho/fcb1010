@@ -5,6 +5,7 @@ import { PresetEditor } from '@/components/fcb/PresetEditor';
 import { PresetGrid } from '@/components/fcb/PresetGrid';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDump } from '@/lib/fcb/DumpProvider';
+import type { FcbPreset } from '@/lib/fcb/model';
 
 function EmptyState() {
   return (
@@ -25,6 +26,7 @@ function EmptyState() {
 function PresetsPage() {
   const { dump } = useDump();
   const [selected, setSelected] = useState(0);
+  const [clipboard, setClipboard] = useState<FcbPreset | null>(null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -44,7 +46,7 @@ function PresetsPage() {
           </Card>
           <Card>
             <CardContent>
-              <PresetEditor presetIndex={selected} />
+              <PresetEditor presetIndex={selected} clipboard={clipboard} onClipboardChange={setClipboard} />
             </CardContent>
           </Card>
         </div>

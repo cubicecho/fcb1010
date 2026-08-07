@@ -1,7 +1,10 @@
+import { ClipboardPaste, Copy, Eraser } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useDump } from '@/lib/fcb/DumpProvider';
-import { type FcbPreset, getPreset, presetLabel, setPreset } from '@/lib/fcb/model';
+import { createEmptyPreset, type FcbPreset, getPreset, presetLabel, setPreset } from '@/lib/fcb/model';
 import { CC_PICKER_ITEMS, NOTE_PICKER_ITEMS } from '@/lib/midi/names';
 import { MidiNumberInput } from './MidiNumberInput';
 import { MidiValuePicker } from './MidiValuePicker';
@@ -36,8 +39,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function PresetEditor({ presetIndex }: { presetIndex: number }) {
-  const { dump, updateMemory } = useDump();
+interface PresetEditorProps {
+  presetIndex: number;
+  /** Copy/paste buffer, held by the page so it survives switching presets. */
+  clipboard: FcbPreset | null;
+  onClipboardChange: (preset: FcbPreset) => void;
+}
+
+export function PresetEditor({ presetIndex, clipboard, onClipboardChange }: PresetEditorProps) {
+  const { dump, updateMemory, presetNames, setPresetName } = useDump();
   if (!dump) return null;
 
   const preset = getPreset(dump.memory, presetIndex);
@@ -52,7 +62,46 @@ export function PresetEditor({ presetIndex }: { presetIndex: number }) {
 
   return (
     <div className="flex flex-col">
-      <h3 className="mb-2 font-heading text-sm font-semibold">Preset {presetLabel(presetIndex)}</h3>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h3 className="font-heading text-sm font-semibold">Preset {presetLabel(presetIndex)}</h3>
+        <Input
+          value={presetNames[presetIndex]}
+          onChange={(event) => setPresetName(presetIndex, event.target.value)}
+          placeholder="Name (stays in this browser)"
+          aria-label="Preset name"
+          className="h-8 w-52"
+        />
+        <div className="ml-auto flex gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onClipboardChange(getPreset(dump.memory, presetIndex))}
+            title="Copy preset"
+            aria-label="Copy preset"
+          >
+            <Copy />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!clipboard}
+            onClick={() => clipboard && updateMemory((memory) => setPreset(memory, presetIndex, clipboard))}
+            title="Paste preset"
+            aria-label="Paste preset"
+          >
+            <ClipboardPaste />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => updateMemory((memory) => setPreset(memory, presetIndex, createEmptyPreset()))}
+            title="Clear preset (switch every function off)"
+            aria-label="Clear preset"
+          >
+            <Eraser />
+          </Button>
+        </div>
+      </div>
 
       {preset.pc.map((slot, i) => (
         <SlotRow
