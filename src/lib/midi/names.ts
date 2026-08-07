@@ -90,15 +90,12 @@ export interface MidiPickerItem {
 
 const range128 = Array.from({ length: 128 }, (_, i) => i);
 
-/** All 128 controllers: "7 · Volume" for named CCs, "27" for unnamed ones. */
-export const CC_PICKER_ITEMS: readonly MidiPickerItem[] = range128.map((value) => {
-  const name = CC_NAMES[value];
-  return {
-    value,
-    label: name ? `${value} · ${name}` : `${value}`,
-    keywords: [`cc${value}`, `cc ${value}`],
-  };
-});
+/** All 128 controllers: "7 · Volume"; unassigned ones use the spec's term, "27 · Undefined". */
+export const CC_PICKER_ITEMS: readonly MidiPickerItem[] = range128.map((value) => ({
+  value,
+  label: `${value} · ${CC_NAMES[value] ?? 'Undefined'}`,
+  keywords: [`cc${value}`, `cc ${value}`],
+}));
 
 /** All 128 notes as "C4 · 60", searchable by pitch name or number. */
 export const NOTE_PICKER_ITEMS: readonly MidiPickerItem[] = range128.map((value) => ({
