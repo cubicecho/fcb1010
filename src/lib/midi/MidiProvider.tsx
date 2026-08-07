@@ -88,6 +88,7 @@ export function MidiProvider({ children }: { children: ReactNode }) {
       const entry: MonitorEntry = {
         id: ++entryIdRef.current,
         timestamp: event.timestamp,
+        direction: 'in',
         portId: port.id,
         portName: port.name,
         message: decodeMidiMessage(Array.from(event.message.data)),
@@ -158,6 +159,20 @@ export function MidiProvider({ children }: { children: ReactNode }) {
       const output = WebMidi.outputs.find((candidate) => candidate.id === selectedOutputId);
       if (!output) return false;
       output.send(data);
+      // Local echo so the Monitor shows what left the app and to which port —
+      // without it, a message swallowed downstream is indistinguishable from
+      // one that was never sent.
+      const entry: MonitorEntry = {
+        id: ++entryIdRef.current,
+        timestamp: performance.now(),
+        direction: 'out',
+        portId: output.id,
+        portName: output.name,
+        message: decodeMidiMessage(data),
+      };
+      for (const listener of listenersRef.current) {
+        listener(entry);
+      }
       return true;
     },
     [selectedOutputId],

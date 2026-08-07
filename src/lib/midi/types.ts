@@ -36,6 +36,8 @@ export interface MonitorEntry {
   id: number;
   /** Milliseconds since page load (DOMHighResTimeStamp). */
   timestamp: number;
+  /** 'in' = received from a port; 'out' = sent by this app (local echo). */
+  direction: 'in' | 'out';
   portId: string;
   portName: string;
   message: DecodedMidiMessage;

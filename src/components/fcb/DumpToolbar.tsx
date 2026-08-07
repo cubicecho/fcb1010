@@ -52,7 +52,7 @@ export function DumpToolbar() {
 
   useEffect(() => {
     return midi.subscribe((entry) => {
-      if (entry.message.kind !== 'sysex') return;
+      if (entry.direction === 'out' || entry.message.kind !== 'sysex') return;
       if (detectingRef.current) {
         const info = parseVersionResponse(entry.message.data);
         if (info) {

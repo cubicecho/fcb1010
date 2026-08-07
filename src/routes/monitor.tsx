@@ -131,6 +131,7 @@ function MonitorPage() {
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
                     <TableHead className="w-28">Time</TableHead>
+                    <TableHead className="w-12">Dir</TableHead>
                     <TableHead className="w-44">Port</TableHead>
                     <TableHead className="w-24">Type</TableHead>
                     <TableHead className="w-12">Ch</TableHead>
@@ -143,6 +144,11 @@ function MonitorPage() {
                     <TableRow key={entry.id}>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {formatTime(entry.timestamp)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={entry.direction === 'out' ? 'default' : 'outline'} className="text-xs">
+                          {entry.direction === 'out' ? '→ out' : 'in'}
+                        </Badge>
                       </TableCell>
                       <TableCell className="max-w-44 truncate text-xs" title={entry.portName}>
                         {entry.portName}
