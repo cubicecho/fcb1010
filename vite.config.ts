@@ -6,6 +6,8 @@ import { defineConfig } from 'vite';
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Set by CI to deploy under a sub-path (GitHub Pages project site).
+  base: process.env.BASE_PATH ?? '/',
   plugins: [tanstackRouter({ target: 'react', autoCodeSplitting: true }), react(), tailwindcss()],
   server: {
     host: '0.0.0.0',
