@@ -1,4 +1,5 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/combobox';
+import { FormField } from '@/components/form-field';
 import { ALL_INPUTS, NO_OUTPUT, useMidi } from '@/lib/midi/MidiProvider';
 
 export function PortSelectors() {
@@ -11,40 +12,39 @@ export function PortSelectors() {
       ? selectedOutputId
       : NO_OUTPUT;
 
+  const inputOptions = [
+    { value: ALL_INPUTS, label: 'All inputs' },
+    ...inputs.map((port) => ({ value: port.id, label: port.name })),
+  ];
+  const outputOptions = [
+    { value: NO_OUTPUT, label: 'No output' },
+    ...outputs.map((port) => ({ value: port.id, label: port.name })),
+  ];
+
   return (
-    <div className="flex flex-wrap items-end gap-4">
-      <div className="grid gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">MIDI Input</span>
-        <Select value={inputValue} onValueChange={setSelectedInputId}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Select input" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_INPUTS}>All inputs</SelectItem>
-            {inputs.map((port) => (
-              <SelectItem key={port.id} value={port.id}>
-                {port.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">MIDI Output</span>
-        <Select value={outputValue} onValueChange={setSelectedOutputId}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Select output" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_OUTPUT}>No output</SelectItem>
-            {outputs.map((port) => (
-              <SelectItem key={port.id} value={port.id}>
-                {port.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="flex flex-wrap items-start gap-4">
+      <FormField
+        label="MIDI input"
+        className="w-56"
+        controlSlot={
+          <Combobox
+            options={inputOptions}
+            value={inputValue}
+            onValueChange={(value: string) => setSelectedInputId(value)}
+          />
+        }
+      />
+      <FormField
+        label="MIDI output"
+        className="w-56"
+        controlSlot={
+          <Combobox
+            options={outputOptions}
+            value={outputValue}
+            onValueChange={(value: string) => setSelectedOutputId(value)}
+          />
+        }
+      />
     </div>
   );
 }

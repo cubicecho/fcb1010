@@ -1,49 +1,119 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
+import { Slot } from "radix-ui";
+import type * as React from "react";
+import {
+  type BadgeProps,
+  type BadgeVariant,
+  badgeContainerVariants,
+  badgeHasLabel,
+  badgeIconClass,
+  badgeRemoveLabel,
+  badgeSoftDotClass,
+  badgeTextFallback,
+  badgeTextVariants,
+  badgeVariants,
+} from "@/components/ui/badge-base";
+import { cn } from "@/lib/utils";
+import { X } from "@/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-import { cn } from "@/lib/utils"
+export type { BadgeProps, BadgeVariant };
 
-const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
-        secondary:
-          "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
-        destructive:
-          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
-        outline:
-          "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
-        ghost:
-          "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
-        link: "text-primary underline-offset-4 hover:underline",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-)
-
-function Badge({
-  className,
+/** A small pill naming a kind or a state, or a dot of the same colour when it has no children. */
+export function Badge({
   variant = "default",
+  backgroundColor,
+  textColor,
+  className,
+  label,
+  onRemove,
+  removeLabel,
+  mono = false,
+  pulse = false,
   asChild = false,
+  style,
+  children,
   ...props
-}: React.ComponentProps<"span"> &
-  VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot.Root : "span"
+}: BadgeProps &
+  Omit<React.ComponentProps<"span">, keyof BadgeProps> & {
+    /** Render the single child with the badge's classes instead of a `<span>`. */
+    asChild?: boolean | undefined;
+  }) {
+  const shape = asChild || badgeHasLabel(children) ? "pill" : "dot";
+  const Comp = asChild ? Slot.Root : "span";
+  // `aria-describedby` is passed even when empty: radix points its trigger at the open bubble,
+  // `Slot` lets the child's value win, and describing the dot with its own name reads it twice.
+  const dotName = label
+    ? ({ role: "img", "aria-label": label, "aria-describedby": undefined } as const)
+    : ({ "aria-hidden": true } as const);
 
-  return (
+  const softDot = shape === "pill" && !backgroundColor ? badgeSoftDotClass(variant) : null;
+  const pill =
+    shape === "pill" ? (
+      <>
+        {softDot ? <span aria-hidden className={softDot} /> : null}
+        {children}
+        {onRemove ? (
+          <button
+            type="button"
+            aria-label={removeLabel ?? badgeRemoveLabel(children, label)}
+            className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:bg-current/10 focus-visible:bg-current/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove();
+            }}
+            // The keys that press it, stopped too, so a badge's own `onKeyDown` does not act on them.
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.stopPropagation();
+              }
+            }}
+          >
+            <X className={badgeIconClass} aria-hidden />
+          </button>
+        ) : null}
+      </>
+    ) : null;
+
+  const badge = (
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant }), className)}
+      className={cn(
+        "inline-flex w-fit overflow-hidden whitespace-nowrap transition-colors focus-visible:outline-none [&>svg]:pointer-events-none [&>svg]:size-3",
+        badgeContainerVariants({ variant, shape }),
+        shape === "pill" &&
+          (backgroundColor ? badgeTextFallback(mono) : badgeTextVariants({ variant, mono })),
+        variant === "link" && "[a&]:hover:underline [a&]:focus-visible:underline",
+        // Tailwind's pulse is `BADGE_PULSE_MS` long and `BADGE_PULSE_LOW` faint, as on device.
+        pulse && shape === "dot" && "motion-safe:animate-pulse",
+        className,
+      )}
+      style={{
+        ...(backgroundColor ? { backgroundColor } : {}),
+        ...(textColor ? { color: textColor } : {}),
+        ...style,
+      }}
+      // A dot carries meaning and no text, so it is named or it is decoration;
+      // the same split `color-dot` makes, for the same reason.
+      {...(shape === "dot" ? dotName : {})}
       {...props}
-    />
-  )
+    >
+      {/* `asChild` renders `children` and nothing beside it. `Slot` counts every child
+          expression, a `null` included, so a second slot here — even one that is always
+          empty under `asChild` — made it throw "failed to slot onto its children" (#152). */}
+      {asChild ? children : pill}
+    </Comp>
+  );
+
+  if (shape === "pill" || Boolean(label) === false) {
+    return badge;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
-export { Badge, badgeVariants }
+export { badgeVariants };

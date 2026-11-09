@@ -50,15 +50,17 @@ export function PresetGrid({ selected, onSelect }: PresetGridProps) {
         onClick={() => onSelect(index)}
         aria-pressed={isSelected}
         className={cn(
-          'flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors',
-          isSelected ? 'border-primary bg-primary/10' : 'hover:border-muted-foreground/40 hover:bg-muted/50',
+          'flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:outline-none',
+          isSelected
+            ? 'border-active bg-active/40 hover:bg-active/60'
+            : 'border-foreground/10 hover:bg-hover focus-visible:bg-hover',
         )}
       >
         <span className="flex w-full items-baseline gap-1.5 text-sm font-semibold">
           {pedal + 1}
           {name && <span className="truncate font-normal">{name}</span>}
         </span>
-        <span className="w-full truncate text-xs text-muted-foreground">{presetSummary(preset)}</span>
+        <span className="w-full truncate text-xs text-foreground/60">{presetSummary(preset)}</span>
       </button>
     );
   };

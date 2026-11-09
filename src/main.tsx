@@ -1,6 +1,7 @@
 import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ConfirmProvider } from '@/components/ui/confirm';
 import { DumpProvider } from '@/lib/fcb/DumpProvider';
 import { FirmwareProvider } from '@/lib/fcb/FirmwareProvider';
 import { MidiProvider } from '@/lib/midi/MidiProvider';
@@ -20,7 +21,9 @@ createRoot(document.getElementById('root')!).render(
     <MidiProvider>
       <FirmwareProvider>
         <DumpProvider>
-          <RouterProvider router={router} />
+          <ConfirmProvider>
+            <RouterProvider router={router} />
+          </ConfirmProvider>
         </DumpProvider>
       </FirmwareProvider>
     </MidiProvider>

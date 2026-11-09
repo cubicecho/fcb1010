@@ -1,5 +1,6 @@
-import { CircleAlert, CircleCheck, CircleDashed, LoaderCircle } from 'lucide-react';
+import { CircleDashed } from '@/components/app-icons';
 import { Badge } from '@/components/ui/badge';
+import { CircleAlert, CircleCheck, LoaderCircle } from '@/components/ui/icons';
 import { useMidi } from '@/lib/midi/MidiProvider';
 
 export function MidiStatusBadge() {

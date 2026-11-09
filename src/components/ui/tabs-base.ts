@@ -1,0 +1,86 @@
+import type { ReactElement, ReactNode } from "react";
+import type { SlotNode } from "@/lib/utils";
+
+export type TabsProps = {
+  /** The active tab, when the caller owns it. */
+  value?: string | undefined;
+  /** Called with the tab the user picked. */
+  onValueChange?: ((value: string) => void) | undefined;
+  /** The tab active at mount, when uncontrolled. */
+  defaultValue?: string | undefined;
+  className?: string | undefined;
+  children: ReactNode;
+};
+
+export type TabsListProps = {
+  /**
+   * The tablist's name, read on entering it: "Project view, tab list". Give one
+   * whenever no visible heading names the tabs — ARIA's tabs pattern asks for it.
+   */
+  "aria-label"?: string | undefined;
+  /** The id of a visible heading that names the tablist, in place of `aria-label`. */
+  "aria-labelledby"?: string | undefined;
+  /**
+   * On the list's box. A list wider than the space it is given scrolls sideways, and brings the
+   * selected tab into view, so a row of seven tabs needs nothing here to fit a phone.
+   */
+  className?: string | undefined;
+  children: ReactNode;
+};
+
+export type TabsTriggerProps = {
+  value: string;
+  /** Not selectable, and dimmed. */
+  disabled?: boolean | undefined;
+  className?: string | undefined;
+  /**
+   * The label, and optionally an icon beside it: `<Clock /> Recent`. The icon
+   * takes the tab's active or inactive colour on both halves.
+   */
+  children: ReactNode;
+  /**
+   * The far end of the tab, after its label: a dot for unsaved changes or a server in error, a
+   * count. What it says is part of the tab's name, so a dot is `<Badge variant="warning"
+   * label="Unsaved changes" />`, which is read as "Device, Unsaved changes", and not a bare
+   * coloured view, which is read as nothing.
+   */
+  trailingSlot?: SlotNode | undefined;
+  /**
+   * The route this tab is, as an element with no children: `<a href="/settings/agents" />`, a
+   * router's `<Link to="/settings/agents" />`. The tab is drawn *as* the link, keeping `role="tab"`
+   * and `aria-selected`, so it has an `href` to middle-click, open in a new tab or copy, and the
+   * label goes inside it. A press follows the link and selects the tab. As on `Button`, on device
+   * the link wraps the tab instead: expo-router's takes it with `asChild`.
+   *
+   * Pass the root `value` from the route, so the tab the page is on is the selected one.
+   */
+  linkSlot?: ReactElement | undefined;
+};
+
+export type TabsContentProps = {
+  value: string;
+  className?: string | undefined;
+  children: ReactNode;
+};
+
+/**
+ * The list's box: a frame around its tabs, as tall as they are and its own padding. How its tabs
+ * are centred is each half's own: a list too narrow for its tabs scrolls sideways, and the two
+ * platforms centre a row that can overflow differently.
+ *
+ * No height of its own (#521). It was the 40px box an `Input` is, which left a tab 32px inside it,
+ * and on device a scroller clips a touch to its frame, so no `hitSlop` could grow a tab to 44pt.
+ */
+export const TABS_LIST_CLASS =
+  "items-center rounded-md border border-foreground/50 bg-background p-1";
+/** The list's own `p-1`, kept clear of a tab brought into view so it does not sit on the border. */
+export const TABS_LIST_INSET = 4;
+/**
+ * A row, so an icon sits beside the label. `gap-1.5` is shadcn's own. 40px, the height of an
+ * `Input`, a `Select` and a default `Button`, so a tab is the same size as the controls beside it;
+ * the device half takes it to 44pt with `touchRowClass` (#521).
+ */
+export const TABS_TRIGGER_CLASS =
+  "h-10 flex-row items-center justify-center gap-1.5 rounded-sm px-3";
+/** The type of a tab's label. */
+export const TABS_TRIGGER_TEXT_CLASS = "text-sm font-semibold";

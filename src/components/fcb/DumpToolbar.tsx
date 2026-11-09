@@ -1,7 +1,10 @@
-import { Download, FilePlus2, FolderOpen, HardDriveDownload, Redo2, Search, Send, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { FilePlus2, FolderOpen, HardDriveDownload, Redo2, Send } from '@/components/app-icons';
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm';
+import { CircleCheck, Download, Search, Undo2 } from '@/components/ui/icons';
 import { useDump } from '@/lib/fcb/DumpProvider';
 import { useFirmware } from '@/lib/fcb/FirmwareProvider';
 import {
@@ -50,6 +53,8 @@ export function DumpToolbar() {
   const [receiveState, setReceiveState] = useState<'idle' | 'waiting' | 'timeout' | 'sendfailed'>('idle');
   const [detectState, setDetectState] = useState<DetectState>(null);
   const [verifyState, setVerifyState] = useState<VerifyState>('idle');
+  const [invalidFile, setInvalidFile] = useState<string | null>(null);
+  const confirm = useConfirm();
   const waitingRef = useRef(false);
   const receiveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const detectingRef = useRef(false);
@@ -108,14 +113,21 @@ export function DumpToolbar() {
     };
   }, []);
 
-  const confirmDiscard = () => !dump?.dirty || confirm('You have unsaved changes that will be lost. Continue?');
+  /** Asks before unsaved edits are thrown away; with nothing unsaved there is nothing to ask. */
+  const confirmDiscard = async () =>
+    !dump?.dirty ||
+    (await confirm({
+      title: 'Discard your changes?',
+      description: 'You have unsaved changes to this setup. They will be lost.',
+      confirmLabel: 'Discard',
+    }));
 
-  const newSetup = () => {
-    if (confirmDiscard()) loadDefault();
+  const newSetup = async () => {
+    if (await confirmDiscard()) loadDefault();
   };
 
-  const openFile = () => {
-    if (confirmDiscard()) fileInputRef.current?.click();
+  const openFile = async () => {
+    if (await confirmDiscard()) fileInputRef.current?.click();
   };
 
   const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
@@ -123,9 +135,7 @@ export function DumpToolbar() {
     event.target.value = '';
     if (!file) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
-    if (!loadDump(bytes, 'file')) {
-      alert(`"${file.name}" is not a valid FCB1010 patchdump (expected 2352-byte sysex).`);
-    }
+    setInvalidFile(loadDump(bytes, 'file') ? null : file.name);
   };
 
   const saveFile = () => {
@@ -141,12 +151,15 @@ export function DumpToolbar() {
     markClean();
   };
 
-  const sendToPedal = () => {
+  const sendToPedal = async () => {
     const sysex = toSysex();
     if (!dump || !sysex) return;
-    if (!confirm('Send this setup to the pedal? It overwrites all 100 presets and global settings stored on it.')) {
-      return;
-    }
+    const isConfirmed = await confirm({
+      title: 'Send this setup to the pedal?',
+      description: 'It overwrites all 100 presets and the global settings stored on the pedal.',
+      confirmLabel: 'Send',
+    });
+    if (!isConfirmed) return;
     if (!midi.send(Array.from(sysex))) {
       setReceiveState('sendfailed');
       return;
@@ -171,10 +184,15 @@ export function DumpToolbar() {
     }, VERIFY_DELAY_MS);
   };
 
-  const receiveFromPedal = () => {
-    if (dump?.dirty && !confirm('You have unsaved changes that will be replaced by the pedal’s setup. Continue?')) {
-      return;
-    }
+  const receiveFromPedal = async () => {
+    const isConfirmed =
+      !dump?.dirty ||
+      (await confirm({
+        title: 'Replace your changes?',
+        description: 'You have unsaved changes to this setup. The pedal’s setup will replace them.',
+        confirmLabel: 'Replace',
+      }));
+    if (!isConfirmed) return;
     if (!midi.send(dumpRequestMessage(dump?.deviceId))) {
       setReceiveState('sendfailed');
       return;
@@ -215,64 +233,74 @@ export function DumpToolbar() {
       ? 'The selected MIDI output is no longer connected — re-select it on the Monitor page'
       : undefined;
 
+  const dismiss = (onDismiss: () => void) => (
+    <Button variant="outline" size="sm" onClick={onDismiss} content="Dismiss" />
+  );
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 self-stretch">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={newSetup}>
-          <FilePlus2 />
-          New
-        </Button>
-        <Button variant="outline" size="sm" onClick={openFile}>
-          <FolderOpen />
-          Load .syx
-        </Button>
-        <Button variant="outline" size="sm" onClick={saveFile} disabled={!dump}>
-          <Download />
-          Save .syx
-        </Button>
-        <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
-          <Undo2 />
-        </Button>
+        <Button variant="outline" size="sm" onClick={newSetup} iconSlot={<FilePlus2 />} content="New" />
+        <Button variant="outline" size="sm" onClick={openFile} iconSlot={<FolderOpen />} content="Load .syx" />
         <Button
           variant="outline"
           size="sm"
+          onClick={saveFile}
+          disabled={!dump}
+          iconSlot={<Download />}
+          content="Save .syx"
+        />
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={undo}
+          disabled={!canUndo}
+          aria-label="Undo"
+          hint="Undo (Ctrl+Z)"
+          iconSlot={<Undo2 />}
+        />
+        <Button
+          variant="outline"
+          size="icon-sm"
           onClick={redo}
           disabled={!canRedo}
-          title="Redo (Ctrl+Shift+Z)"
           aria-label="Redo"
-        >
-          <Redo2 />
-        </Button>
+          hint="Redo (Ctrl+Shift+Z)"
+          iconSlot={<Redo2 />}
+        />
         <Button
           variant="outline"
           size="sm"
           onClick={receiveFromPedal}
-          disabled={outputUnavailable || receiveState === 'waiting'}
-          title={outputHint}
-        >
-          <HardDriveDownload />
-          {receiveState === 'waiting' ? 'Waiting for pedal…' : 'Receive from pedal'}
-        </Button>
+          disabled={outputUnavailable}
+          loading={receiveState === 'waiting'}
+          loadingLabel="Waiting for pedal…"
+          hint={outputHint}
+          iconSlot={<HardDriveDownload />}
+          content="Receive from pedal"
+        />
         <Button
           variant="outline"
           size="sm"
           onClick={sendToPedal}
-          disabled={!dump || outputUnavailable || verifyState === 'verifying'}
-          title={outputHint}
-        >
-          <Send />
-          {verifyState === 'verifying' ? 'Verifying…' : 'Send to pedal'}
-        </Button>
+          disabled={!dump || outputUnavailable}
+          loading={verifyState === 'verifying'}
+          loadingLabel="Verifying…"
+          hint={outputHint}
+          iconSlot={<Send />}
+          content="Send to pedal"
+        />
         <Button
           variant="outline"
           size="sm"
           onClick={detectFirmware}
-          disabled={outputUnavailable || detectState === 'detecting'}
-          title={outputHint ?? 'Ask the pedal which firmware it runs'}
-        >
-          <Search />
-          {detectState === 'detecting' ? 'Detecting…' : 'Detect firmware'}
-        </Button>
+          disabled={outputUnavailable}
+          loading={detectState === 'detecting'}
+          loadingLabel="Detecting…"
+          hint={outputHint ?? 'Ask the pedal which firmware it runs'}
+          iconSlot={<Search />}
+          content="Detect firmware"
+        />
         {detectState !== null && detectState !== 'detecting' && (
           <Badge variant={detectState.kind === 'ok' ? 'secondary' : 'outline'}>
             {detectState.kind === 'ok'
@@ -290,88 +318,99 @@ export function DumpToolbar() {
       </div>
       <input ref={fileInputRef} type="file" accept=".syx,audio/midi" hidden onChange={onFileChosen} />
 
+      {invalidFile !== null && (
+        <Alert
+          variant="destructive"
+          title="Not a patchdump"
+          description={`"${invalidFile}" is not a valid FCB1010 patchdump (expected 2352-byte sysex).`}
+          actionSlot={dismiss(() => setInvalidFile(null))}
+        />
+      )}
+
       {receiveState === 'sendfailed' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">
-          <span>
-            Nothing was sent — the selected MIDI output is no longer available (unplugged, or its id changed). Re-select
-            the output on the <span className="font-medium">Monitor</span> page and try again.
-          </span>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setReceiveState('idle')}>
-            Dismiss
-          </Button>
-        </div>
+        <Alert
+          variant="destructive"
+          title="Nothing was sent"
+          description={
+            <>
+              The selected MIDI output is no longer available (unplugged, or its id changed). Re-select the output on
+              the <span className="font-medium">Monitor</span> page and try again.
+            </>
+          }
+          actionSlot={dismiss(() => setReceiveState('idle'))}
+        />
       )}
 
       {receiveState === 'timeout' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">
-          <span>
-            No patchdump received. Check that both MIDI input and output are connected to the pedal (try{' '}
-            <span className="font-medium">Detect firmware</span> to verify the link). Manual fallback: power the pedal
-            on holding <span className="font-medium">DOWN</span>, press <span className="font-medium">UP</span> until
-            the CONFIG row is lit, then press footswitch <span className="font-medium">6</span> to transmit — the dump
-            will be picked up here.
-          </span>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setReceiveState('idle')}>
-            Dismiss
-          </Button>
-        </div>
+        <Alert
+          variant="destructive"
+          title="No patchdump received"
+          description={
+            <>
+              Check that both MIDI input and output are connected to the pedal (try{' '}
+              <span className="font-medium">Detect firmware</span> to verify the link). Manual fallback: power the pedal
+              on holding <span className="font-medium">DOWN</span>, press <span className="font-medium">UP</span> until
+              the CONFIG row is lit, then press footswitch <span className="font-medium">6</span> to transmit — the dump
+              will be picked up here.
+            </>
+          }
+          actionSlot={dismiss(() => setReceiveState('idle'))}
+        />
       )}
 
       {verifyState === 'verified' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-primary/50 bg-primary/5 px-3 py-2 text-sm">
-          <span>Sent and verified — the pedal's memory matches this setup.</span>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setVerifyState('idle')}>
-            Dismiss
-          </Button>
-        </div>
+        <Alert
+          variant="info"
+          iconSlot={<CircleCheck />}
+          title="Sent and verified"
+          description="The pedal's memory matches this setup."
+          actionSlot={dismiss(() => setVerifyState('idle'))}
+        />
       )}
 
       {verifyState === 'mismatch' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-sm">
-          <span>
-            The pedal's memory does <span className="font-medium">not</span> match what was sent. Try sending again; if
-            it keeps happening, the MIDI link may be corrupting sysex (some USB interfaces drop or mangle large
-            messages).
-          </span>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setVerifyState('idle')}>
-            Dismiss
-          </Button>
-        </div>
+        <Alert
+          variant="destructive"
+          title="The pedal's memory does not match"
+          description="Try sending again. If it keeps happening, the MIDI link may be corrupting sysex (some USB interfaces drop or mangle large messages)."
+          actionSlot={dismiss(() => setVerifyState('idle'))}
+        />
       )}
 
       {verifyState === 'unverified' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm">
-          <span>
-            Setup sent, but the pedal didn't answer the verification readback. On stock (non-UnO) firmware the pedal
-            can't send its memory on request, so the send may still have worked — check a preset on the pedal to
-            confirm.
-          </span>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setVerifyState('idle')}>
-            Dismiss
-          </Button>
-        </div>
+        <Alert
+          variant="warning"
+          title="Sent, but not verified"
+          description="The pedal didn't answer the verification readback. On stock (non-UnO) firmware the pedal can't send its memory on request, so the send may still have worked: check a preset on the pedal to confirm."
+          actionSlot={dismiss(() => setVerifyState('idle'))}
+        />
       )}
 
       {received && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-primary/50 bg-primary/5 px-3 py-2 text-sm">
-          <span>
-            Patchdump received from <span className="font-medium">{received.portName}</span>.
-          </span>
-          <div className="ml-auto flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                loadDump(received.bytes, 'device');
-                setReceived(null);
-              }}
-            >
-              Load it
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setReceived(null)}>
-              Dismiss
-            </Button>
-          </div>
-        </div>
+        <Alert
+          variant="info"
+          iconSlot={<HardDriveDownload />}
+          title="Patchdump received"
+          description={
+            <>
+              From <span className="font-medium">{received.portName}</span>.
+            </>
+          }
+          actionSlot={
+            <>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  loadDump(received.bytes, 'device');
+                  setReceived(null);
+                }}
+                content="Load it"
+              />
+              {dismiss(() => setReceived(null))}
+            </>
+          }
+        />
       )}
     </div>
   );

@@ -1,22 +1,17 @@
-import * as React from "react"
-import { Label as LabelPrimitive } from "radix-ui"
+import { Label as LabelPrimitive } from "radix-ui";
+import type { ComponentPropsWithRef } from "react";
+import { LABEL_CLASS } from "@/components/ui/label-base";
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
+type LabelProps = Omit<ComponentPropsWithRef<typeof LabelPrimitive.Root>, "className"> & {
+  className?: string | undefined;
+};
 
-function Label({
-  className,
-  ...props
-}: React.ComponentProps<typeof LabelPrimitive.Root>) {
+/** The caption that names a control. */
+function Label({ className, ...props }: LabelProps) {
   return (
-    <LabelPrimitive.Root
-      data-slot="label"
-      className={cn(
-        "flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
-        className
-      )}
-      {...props}
-    />
-  )
+    <LabelPrimitive.Root data-slot="label" {...props} className={cn(LABEL_CLASS, className)} />
+  );
 }
 
-export { Label }
+export { Label };
