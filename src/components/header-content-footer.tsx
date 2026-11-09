@@ -1,0 +1,355 @@
+import { type Ref, useImperativeHandle, useRef } from 'react';
+import { useOverflows } from '@/components/ui/overflows';
+import { useReducedMotion } from '@/components/ui/reduced-motion';
+import { cn, hasSlot, INSET_FOCUS_EDGE, type SlotNode } from '@/lib/utils';
+
+/**
+ * The column a page's chrome and its content share.
+ *
+ * A header that caps itself while the table beneath it runs to the pane edge reads as two
+ * screens stacked, and the mismatch is there at every width, not only past the cap: the header
+ * carries its own inset and the table did not. One class, applied to every slot, is what keeps
+ * the title above the first column rather than beside it.
+ *
+ * The cap is the `2xl` breakpoint. The web reads it from the theme variable so it moves with the
+ * app's own breakpoints; native has no such variable, so it spells the default (`96rem`) out.
+ */
+export const PAGE_COLUMN = 'mx-auto w-full max-w-(--breakpoint-2xl)';
+
+/**
+ * The reading column: a page of prose, a settings screen, a form.
+ *
+ * Narrower than {@link PAGE_COLUMN} because the constraint is a line length, not a viewport.
+ * Both app shells that had grown a page component of their own defaulted to exactly this, and
+ * then disagreed about what the *other* width was called — one said `max-w-5xl` and the other
+ * `max-w-none`, both spelled `wide`. Naming the columns is what stops the third app inventing an
+ * eleventh value: across these projects there are 51 capped page columns wearing 10 widths.
+ */
+export const PROSE_COLUMN = 'mx-auto w-full max-w-3xl';
+
+/**
+ * The class each `width` holds a slot to. Exported for a shell that holds one part of its header
+ * to the body's column while the rest of the header runs the full width.
+ */
+export const COLUMNS = {
+  full: undefined,
+  page: PAGE_COLUMN,
+  prose: PROSE_COLUMN,
+} as const;
+
+/** The column names `width` takes. Exported for shells that pass one through. */
+export type HeaderContentFooterWidth = keyof typeof COLUMNS;
+
+/**
+ * Where the scrolling body is, in pixels: how far down it has moved, how tall what it scrolls is,
+ * and how tall the window onto it is. The body is at its end when `offset + viewportHeight`
+ * reaches `contentHeight` — compare with a pixel or two to spare, since all three are fractional.
+ */
+export type ScrollPosition = {
+  offset: number;
+  contentHeight: number;
+  viewportHeight: number;
+};
+
+/**
+ * What moves the scrolling body, the same call on the web and on device. `contentRef` is the
+ * element itself, and the two elements share no method.
+ */
+export type ScrollHandle = {
+  /**
+   * Scrolls to the last row. Animated unless told otherwise, or unless the reader's system asks
+   * for reduced motion; a list following a row that is still streaming in passes
+   * `{ animated: false }`, or each new line starts a glide the next one interrupts.
+   */
+  scrollToEnd: (options?: { animated?: boolean }) => void;
+};
+
+/** The part of the web's scrolling `<div>` that `scrollToEnd` uses. */
+type WebScroller = {
+  scrollHeight: number;
+  scrollTo: (options: { top: number; behavior: 'smooth' | 'instant' }) => void;
+};
+
+/** The part of a DOM scroll event {@link Body} reads. */
+type WebScrollEvent = {
+  currentTarget: { scrollTop: number; scrollHeight: number; clientHeight: number };
+};
+
+export type HeaderContentFooterProps = {
+  /** The body. The only slot that grows. */
+  contentSlot: SlotNode;
+  /** Page title, toolbar, filters — whatever stays above the body. Absent, no row is drawn. */
+  headerSlot?: SlotNode | undefined;
+  /** Paging, totals, a save bar. Absent, no row is drawn. */
+  footerSlot?: SlotNode | undefined;
+  /**
+   * Whether the body scrolls inside the chassis rather than growing it.
+   *
+   * On, the header and footer stay put while the body moves, which needs the chassis to have a
+   * height to divide — `h-full`, or a parent that gives it one. Off, the chassis is as tall as
+   * what is in it and the page scrolls as a whole.
+   */
+  scroll?: boolean | undefined;
+  /**
+   * - `full` — slots fill whatever box the chassis was given. Print sheets, dialogs, and
+   *   anything already inside its own column.
+   * - `page` — slots share the capped, centred {@link PAGE_COLUMN}, inset to match the header.
+   *   Every list page, every board.
+   * - `prose` — the narrower {@link PROSE_COLUMN}. Settings, a detail page, a form.
+   */
+  width?: HeaderContentFooterWidth | undefined;
+  /**
+   * The header's own column, when it is not the body's: `full` lets a rule under the header, and
+   * a bar in it, run the full width over a body held to `page` or `prose`. What in the header
+   * should still sit over the body's column holds itself to it, with `COLUMNS[width]`. Absent,
+   * the header shares `width`.
+   */
+  headerWidth?: HeaderContentFooterWidth | undefined;
+  /**
+   * The footer's own column, when it is not the body's: `full` lets the rule over the footer run
+   * the full width under a body held to `page` or `prose`, as `headerWidth` does for the header.
+   * What in the footer should still sit under the body's column holds itself to it, with
+   * `COLUMNS[width]` and the body's `px-4`. Absent, the footer shares `width`.
+   */
+  footerWidth?: HeaderContentFooterWidth | undefined;
+  /**
+   * The scrolling body, for a caller that has to reach it — restoring a scroll position. A
+   * `<div>` on the web and, while `scroll` is on, the `ScrollView` on device.
+   */
+  contentRef?: Ref<HTMLDivElement> | undefined;
+  /**
+   * A handle that moves the body: `scrollRef.current?.scrollToEnd()`, the same on both halves.
+   * It does nothing while `scroll` is off, when there is no scrolling body to move.
+   */
+  scrollRef?: Ref<ScrollHandle> | undefined;
+  /**
+   * Called as the body scrolls, with where it now is — the same three numbers on the web and on
+   * device, so a list that follows its newest row can tell whether the reader is still at the
+   * end. Only a body that scrolls reports: with `scroll` off it is never called.
+   */
+  onScroll?: ((position: ScrollPosition) => void) | undefined;
+  /**
+   * On the root, the box the three parts divide. Give it a height (`h-full`, `flex-1`) for `scroll`
+   * to have one to divide.
+   */
+  className?: string | undefined;
+  /** On the header, in its column: the one `headerWidth`, or else `width`, sets. */
+  headerClassName?: string | undefined;
+  /**
+   * On the box that holds `contentSlot`. With `scroll` and a `page` or `prose` width, that is the
+   * column inside the scroller, which runs the full width so its scrollbar is at the edge. On
+   * device, while `scroll` is on, it is the `ScrollView`'s content. Otherwise the body is one box.
+   */
+  contentClassName?: string | undefined;
+  /**
+   * On the footer, in its column: the one `footerWidth`, or else `width`, sets. A bar's own rule
+   * and padding go here.
+   */
+  footerClassName?: string | undefined;
+};
+
+type BodyProps = {
+  contentSlot: SlotNode;
+  scroll: boolean;
+  width: HeaderContentFooterWidth;
+  contentRef: HeaderContentFooterProps['contentRef'];
+  scrollRef: HeaderContentFooterProps['scrollRef'];
+  onScroll: HeaderContentFooterProps['onScroll'];
+  className: string | undefined;
+};
+
+/**
+ * Moves a scroller to its last row. Its own function, and statements, for the reason {@link Body}
+ * is: the compiler keeps the web arm and drops the `ScrollView` call under it.
+ */
+function toEnd(scroller: unknown, animated: boolean) {
+  const box = scroller as WebScroller;
+  box.scrollTo({ top: box.scrollHeight, behavior: animated ? 'smooth' : 'instant' });
+  return;
+}
+
+/** Hands a node to a caller's ref, whichever kind of ref it is. */
+function assign<T>(ref: Ref<T> | undefined, node: T | null) {
+  if (typeof ref === 'function') {
+    ref(node);
+  } else if (ref) {
+    ref.current = node;
+  }
+}
+
+/**
+ * The floor every body needs, whichever element it is. See {@link HeaderContentFooter}.
+ *
+ * The growth differs. On the web `flex-1` is `1 1 0%`, which in a chassis of no set height — a
+ * dialog capped by `max-h` — still sizes from content. Yoga's `flex: 1` starts from nothing, so the
+ * same body in the same dialog collapses to zero; there it starts from its content (`basis-auto`),
+ * grows into a height it is given and shrinks under a cap.
+ */
+const BODY = cn('relative min-h-0 min-w-0', 'flex-1');
+
+/**
+ * A column with the body's inset, matching a page header's `px-4`, for the body and the footer.
+ * Exported for a shell whose footer runs the full width while what is in it keeps the body's
+ * column, as `PageLayout`'s does.
+ */
+export function insetColumn(width: HeaderContentFooterWidth) {
+  return COLUMNS[width] && cn(COLUMNS[width], 'px-4');
+}
+
+/**
+ * The column inside a scrolling body, on the web. The scroller runs the full width, so its
+ * scrollbar and its focus line are at the edge of the area rather than of the column.
+ *
+ * Not `mx-auto`. The scrollbar takes its width out of the box it scrolls, and a column centred in
+ * what is left sits half a scrollbar left of the header's, which is centred on the full width. So
+ * the start margin is the header's own: half of what the full width (`100%` plus the
+ * `--scrollbar-width` that `useOverflows` writes) leaves past the cap, and none once the area is
+ * narrower than the cap. The end takes what is left, so the column stops at the scrollbar. On device
+ * a scrollbar takes no room, and the content container takes `COLUMNS`' own classes.
+ */
+const SCROLLED_COLUMNS = {
+  full: undefined,
+  page: 'max-w-(--breakpoint-2xl) ms-[max(0px,calc((100%+var(--scrollbar-width,0px)-var(--breakpoint-2xl))/2))] px-4',
+  prose: 'max-w-3xl ms-[max(0px,calc((100%+var(--scrollbar-width,0px)-var(--container-3xl))/2))] px-4',
+} as const;
+
+/**
+ * The body, which is the one part that is a different element on each platform.
+ *
+ * Written as statements rather than a ternary because the two arms are different elements, and
+ * the compiler refuses an element chosen at runtime — it folds `Platform.OS === "web"` to `true`
+ * and keeps the first arm, and the `ScrollView` below it is dropped as unreachable.
+ */
+function Body({ contentSlot, scroll, width, contentRef, scrollRef, onScroll, className }: BodyProps) {
+  // The scroller is kept here as well as handed to `contentRef`, for `scrollToEnd` to move.
+  const scroller = useRef<unknown>(null);
+  const [measured, overflows] = useOverflows();
+  const reducedMotion = useReducedMotion();
+  const column = insetColumn(width);
+  useImperativeHandle<ScrollHandle, ScrollHandle>(scrollRef, () => ({
+    scrollToEnd: ({ animated = true } = {}) => {
+      if (scroll && scroller.current) {
+        // A glide is motion; under reduced motion the body jumps, whatever the caller asked.
+        toEnd(scroller.current, animated && reducedMotion === false);
+      }
+    },
+  }));
+  const scrolledColumn = scroll ? SCROLLED_COLUMNS[width] : undefined;
+  return (
+    <div
+      data-slot="header-content-footer-content"
+      // The chassis's own ref type is the device's scroller; on the web both are a `<div>`.
+      ref={(node) => {
+        scroller.current = node;
+        measured.current = node;
+        assign(contentRef as Ref<HTMLDivElement>, node);
+      }}
+      // A scrolling region a keyboard cannot reach is a region a keyboard user cannot read:
+      // the mouse wheel moves it and nothing else does, which axe reports as
+      // `scrollable-region-focusable`. A tab stop is the fix the rule asks for, taken only
+      // while there is something to scroll, so a body that fits is not a stray stop.
+      tabIndex={scroll && overflows ? 0 : undefined}
+      // A view's own props have no scroll event — on device a view does not scroll — so the
+      // listener goes on as a spread, untyped. The element under it is a `<div>` either way.
+      {...(scroll && onScroll
+        ? {
+            onScroll: ({ currentTarget }: WebScrollEvent) =>
+              onScroll({
+                offset: currentTarget.scrollTop,
+                contentHeight: currentTarget.scrollHeight,
+                viewportHeight: currentTarget.clientHeight,
+              }),
+          }
+        : {})}
+      className={cn(
+        'cube-rn-view',
+        BODY,
+        scroll && 'overflow-y-auto',
+        // Inset, not `FOCUS_EDGE`'s border: a border would add a pixel to every gap measured
+        // from the body's edge, including a caller's `py-0`.
+        scroll && INSET_FOCUS_EDGE,
+        scrolledColumn ? undefined : cn(column, className),
+      )}
+    >
+      {scrolledColumn ? (
+        <div
+          data-slot="header-content-footer-column"
+          // `grow` so it is at least as tall as the scroller, as the scroller was when it was the
+          // column itself: a child's `flex-1` still fills the body.
+          className={cn('cube-rn-view', 'min-w-0 grow', scrolledColumn, className)}
+        >
+          {contentSlot}
+        </div>
+      ) : (
+        contentSlot
+      )}
+    </div>
+  );
+}
+
+/**
+ * Header, body, footer, in a column.
+ *
+ * A flex column rather than three fixed grid rows, because the rows only line up when all three
+ * slots are present: with `grid-rows-[min-content_1fr_min-content]` and no header, the body
+ * auto-places into the min-content row and is squashed to its own text, and any `gap` on the
+ * chassis is still spent on the slots that are not there. Flex gives the same shape — the body
+ * takes the leftover, the chrome takes what it needs — and an absent slot costs nothing. It is
+ * also the only one of the two Yoga has, which is what lets this be one component.
+ *
+ * `min-h-0` / `min-w-0` on the body is not decoration. A flex item's floor is its content, so
+ * one wide child — a table, a long unbroken string — grows the chassis and pushes the chrome off
+ * the screen instead of scrolling inside it, and `scroll` does nothing at all without the floor.
+ */
+export function HeaderContentFooter({
+  contentSlot,
+  headerSlot,
+  footerSlot,
+  scroll = false,
+  width = 'full',
+  headerWidth,
+  footerWidth,
+  contentRef,
+  scrollRef,
+  onScroll,
+  className,
+  headerClassName,
+  contentClassName,
+  footerClassName,
+}: HeaderContentFooterProps) {
+  // The header slot stays unpadded: a page header carries its own `px-4`, and the body and the
+  // footer match it so the edges line up.
+
+  return (
+    // `shrink` because a chassis is sized by its parent, and a view does not shrink by default.
+    <div data-slot="header-content-footer" className={cn('cube-rn-view', 'min-h-0 min-w-0 shrink flex-col', className)}>
+      {hasSlot(headerSlot) ? (
+        <div
+          data-slot="header-content-footer-header"
+          className={cn('cube-rn-view', 'min-w-0 shrink-0', COLUMNS[headerWidth ?? width], headerClassName)}
+        >
+          {headerSlot}
+        </div>
+      ) : null}
+
+      <Body
+        contentSlot={contentSlot}
+        scroll={scroll}
+        width={width}
+        contentRef={contentRef}
+        scrollRef={scrollRef}
+        onScroll={onScroll}
+        className={contentClassName}
+      />
+
+      {hasSlot(footerSlot) ? (
+        <div
+          data-slot="header-content-footer-footer"
+          className={cn('cube-rn-view', 'min-w-0 shrink-0', insetColumn(footerWidth ?? width), footerClassName)}
+        >
+          {footerSlot}
+        </div>
+      ) : null}
+    </div>
+  );
+}

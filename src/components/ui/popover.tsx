@@ -1,26 +1,67 @@
-import * as React from "react"
-import { Popover as PopoverPrimitive } from "radix-ui"
+import { Popover as PopoverPrimitive } from "radix-ui";
+import type * as React from "react";
+import type {
+  PopoverAnchorProps,
+  PopoverCloseProps,
+  PopoverContentProps,
+  PopoverProps,
+  PopoverSectionProps,
+  PopoverTriggerProps,
+} from "@/components/ui/popover-base";
+import {
+  POPOVER_CONTENT_CLASS,
+  POPOVER_DESCRIPTION_CLASS,
+  POPOVER_HEADER_CLASS,
+  POPOVER_TITLE_CLASS,
+} from "@/components/ui/popover-base";
+import { FrameFocusGuard } from "@/lib/frame-focus-guard";
+import { bridgePress, CardBodyContext, cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
+/** The shared contract, widened to what the radix part (or element) underneath accepts. */
+type Wide<Base, Radix> = Base & Omit<Radix, keyof Base>;
 
+/** The root of a popover: it holds the open state. */
 function Popover({
+  open,
+  onOpenChange,
+  defaultOpen,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+}: Wide<PopoverProps, React.ComponentProps<typeof PopoverPrimitive.Root>>) {
+  // Spread rather than passed: radix switches to uncontrolled on `open === undefined`,
+  // but only if the prop is absent, and `exactOptionalPropertyTypes` is what makes the
+  // difference expressible.
+  return (
+    <PopoverPrimitive.Root
+      data-slot="popover"
+      {...props}
+      {...(open === undefined ? {} : { open })}
+      {...(onOpenChange === undefined ? {} : { onOpenChange })}
+      {...(defaultOpen === undefined ? {} : { defaultOpen })}
+    />
+  );
 }
 
+/** The element that opens the popover. */
 function PopoverTrigger({
+  asChild,
+  children,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+}: Wide<PopoverTriggerProps, React.ComponentProps<typeof PopoverPrimitive.Trigger>>) {
+  return (
+    <PopoverPrimitive.Trigger data-slot="popover-trigger" asChild={asChild ?? false} {...props}>
+      {asChild ? bridgePress(children) : children}
+    </PopoverPrimitive.Trigger>
+  );
 }
 
+/** The popover's card. */
 function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  children,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: Wide<PopoverContentProps, React.ComponentProps<typeof PopoverPrimitive.Content>>) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
@@ -28,60 +69,94 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          "z-50 flex w-72 origin-(--radix-popover-content-transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          className
+          POPOVER_CONTENT_CLASS,
+          "flex z-50 origin-(--radix-popover-content-transform-origin) text-foreground outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+          className,
         )}
         {...props}
-      />
+      >
+        <CardBodyContext.Provider value={false}>{children}</CardBodyContext.Provider>
+        {/* A framed app focusing itself would take the focus out of the popover's search or field. */}
+        <FrameFocusGuard />
+      </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
-  )
+  );
 }
 
+/** An element the popover is placed against instead of its trigger. */
 function PopoverAnchor({
+  asChild,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
+}: Wide<PopoverAnchorProps, React.ComponentProps<typeof PopoverPrimitive.Anchor>>) {
+  return (
+    <PopoverPrimitive.Anchor data-slot="popover-anchor" asChild={asChild ?? false} {...props} />
+  );
 }
 
-function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
+/** An element that closes the popover when pressed. */
+function PopoverClose({
+  asChild,
+  className,
+  children,
+  ...props
+}: Wide<PopoverCloseProps, React.ComponentProps<typeof PopoverPrimitive.Close>>) {
+  return (
+    <PopoverPrimitive.Close
+      data-slot="popover-close"
+      asChild={asChild ?? false}
+      {...(className === undefined ? {} : { className })}
+      {...props}
+    >
+      {asChild ? bridgePress(children) : children}
+    </PopoverPrimitive.Close>
+  );
+}
+
+/** The block holding the popover's title and description. */
+function PopoverHeader({
+  className,
+  ...props
+}: Wide<PopoverSectionProps, React.ComponentProps<"div">>) {
   return (
     <div
       data-slot="popover-header"
-      className={cn("flex flex-col gap-0.5 text-sm", className)}
+      className={cn(POPOVER_HEADER_CLASS, "flex flex-col", className)}
       {...props}
     />
-  )
+  );
 }
 
-function PopoverTitle({ className, ...props }: React.ComponentProps<"h2">) {
+/** The popover's title. */
+function PopoverTitle({
+  className,
+  ...props
+}: Wide<PopoverSectionProps, React.ComponentProps<"div">>) {
   return (
-    <div
-      data-slot="popover-title"
-      className={cn("font-medium", className)}
-      {...props}
-    />
-  )
+    <div data-slot="popover-title" className={cn(POPOVER_TITLE_CLASS, className)} {...props} />
+  );
 }
 
+/** The muted line under the popover's title. */
 function PopoverDescription({
   className,
   ...props
-}: React.ComponentProps<"p">) {
+}: Wide<PopoverSectionProps, React.ComponentProps<"p">>) {
   return (
     <p
       data-slot="popover-description"
-      className={cn("text-muted-foreground", className)}
+      className={cn(POPOVER_DESCRIPTION_CLASS, className)}
       {...props}
     />
-  )
+  );
 }
 
 export {
   Popover,
   PopoverAnchor,
+  PopoverClose,
   PopoverContent,
   PopoverDescription,
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
-}
+};

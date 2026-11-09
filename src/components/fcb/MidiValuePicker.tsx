@@ -1,8 +1,5 @@
-import { Check, ChevronsUpDown } from 'lucide-react';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useMemo } from 'react';
+import { Combobox } from '@/components/combobox';
 import type { MidiPickerItem } from '@/lib/midi/names';
 import { cn } from '@/lib/utils';
 
@@ -27,48 +24,24 @@ export function MidiValuePicker({
   className,
   'aria-label': ariaLabel,
 }: MidiValuePickerProps) {
-  const [open, setOpen] = useState(false);
-  const selected = items.find((item) => item.value === value);
+  const options = useMemo(
+    () => items.map((item) => ({ value: String(item.value), label: item.label, keywords: item.keywords })),
+    [items],
+  );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          aria-label={ariaLabel}
-          disabled={disabled}
-          className={cn('h-8 w-44 justify-between px-2 text-sm font-normal', className)}
-        >
-          <span className="truncate">{selected?.label ?? value}</span>
-          <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-52 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Number or name…" className="h-8" />
-          <CommandList>
-            <CommandEmpty>No match.</CommandEmpty>
-            <CommandGroup>
-              {items.map((item) => (
-                <CommandItem
-                  key={item.value}
-                  value={item.label}
-                  keywords={item.keywords}
-                  onSelect={() => {
-                    onChange(item.value);
-                    setOpen(false);
-                  }}
-                >
-                  {item.label}
-                  <Check className={cn('ml-auto size-3.5', item.value === value ? 'opacity-100' : 'opacity-0')} />
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <Combobox
+      searchable
+      aria-label={ariaLabel}
+      popoverLabel={ariaLabel}
+      searchLabel={ariaLabel ? `Search ${ariaLabel}` : 'Search'}
+      searchPlaceholder="Number or name…"
+      emptyMessage="No match."
+      disabled={disabled}
+      className={cn('w-44', className)}
+      options={options}
+      value={String(value)}
+      onValueChange={(next: string) => onChange(Number(next))}
+    />
   );
 }

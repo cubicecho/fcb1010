@@ -1,0 +1,143 @@
+import type { ReactNode } from 'react';
+import * as React from 'react';
+import { DescribedTitle, type DescriptionPlacement, foldsDescription } from '@/components/ui/description-hint';
+import { FieldDescription, FieldTitle } from '@/components/ui/field';
+import {
+  actionGap,
+  cn,
+  HEADING_DESCRIPTION,
+  HEADING_GAP,
+  HEADING_TITLE,
+  HEADING_WRAP_FLOOR,
+  HEADING_WRAP_GAP,
+  type SlotNode,
+} from '@/lib/utils';
+
+/** What `actionSlot` is handed when it is a function: the ids of the text on the row's left. */
+type SettingRowIds = {
+  /** The title's id — the control's `aria-labelledby`. `undefined` when there is no title. */
+  titleId: string | undefined;
+  /** The description's id — the control's `aria-describedby`, where the control takes one. */
+  descriptionId: string | undefined;
+};
+
+type SettingRowProps = {
+  /**
+   * What the setting is called: "Dark mode", "Theme", "Auto-sync". Usually given; optional because
+   * a row whose control says what it does ("Clear all memory") only needs the line explaining it.
+   */
+  title?: ReactNode | undefined;
+  /** One line under the title on what the setting does, or what pressing the button costs. */
+  description?: ReactNode | undefined;
+  /**
+   * Where the description is drawn. `inline` (the default) puts it under the title; `popover`
+   * puts it behind a small button beside the title, named "About <title>". `descriptionId` is
+   * handed to `actionSlot` either way, and on the web still resolves to the text. A row with no
+   * title has nothing to put the button beside, so its description stays inline.
+   */
+  descriptionPlacement?: DescriptionPlacement | undefined;
+  /** The `popover` button's glyph. A question mark by default. */
+  descriptionIconSlot?: SlotNode | undefined;
+  /**
+   * The control, at the row's far end: a switch, a select, a button, an input. A function is
+   * handed the ids of the title and description so the control can be named by the title:
+   * `actionSlot={({ titleId }) => <Switch aria-labelledby={titleId} … />}`. A plain node for a
+   * control that names itself — a button whose text is the action.
+   */
+  actionSlot?: SlotNode | ((ids: SettingRowIds) => SlotNode) | undefined;
+  /** On the row, the words and the action together. */
+  className?: string | undefined;
+  /** On the title's own `Text`. */
+  titleClassName?: string | undefined;
+  /** On the description's own `Text`. */
+  descriptionClassName?: string | undefined;
+  /** On the box that holds `actionSlot`, at the row's far end. */
+  actionClassName?: string | undefined;
+};
+
+/**
+ * One row of a settings page: the title and a line on what it does at the start, the control that
+ * changes it at the end. It frames any control; a lone boolean with its caption is `SwitchField`.
+ *
+ * The row wraps rather than breaking at a width: the control sits beside the text while both fit
+ * and drops under it when they do not, by the width the row is given. `actionSlot` may be a
+ * function, which is handed the title's id to point `aria-labelledby` at. A `<label htmlFor>`
+ * cannot name a `role="switch"` `Pressable` on device.
+ */
+export function SettingRow({
+  title,
+  description,
+  descriptionPlacement = 'inline',
+  descriptionIconSlot,
+  actionSlot,
+  className,
+  titleClassName,
+  descriptionClassName,
+  actionClassName,
+}: SettingRowProps) {
+  const uid = React.useId();
+  const titleId = title ? `${uid}-title` : undefined;
+  const descriptionId = description ? `${uid}-description` : undefined;
+  const folded = foldsDescription(title, description, descriptionPlacement);
+  const titleNode = title ? (
+    <FieldTitle
+      data-slot="setting-row-title"
+      id={titleId}
+      className={cn(HEADING_TITLE, folded && 'min-w-0 shrink', titleClassName)}
+    >
+      {title}
+    </FieldTitle>
+  ) : null;
+  const control = typeof actionSlot === 'function' ? actionSlot({ titleId, descriptionId }) : actionSlot;
+
+  return (
+    <div
+      data-slot="setting-row"
+      // The heading rhythm's row: the control level with the title's top rather than centred on the
+      // text, so a second line of description does not move it, and the one wrap floor.
+      className={cn(
+        'cube-rn-view',
+        'min-w-0 flex-row flex-wrap items-start justify-between gap-x-4',
+        HEADING_WRAP_GAP,
+        className,
+      )}
+    >
+      {title || description ? (
+        <div data-slot="setting-row-text" className={cn('cube-rn-view', HEADING_WRAP_FLOOR, HEADING_GAP)}>
+          <DescribedTitle
+            titleSlot={titleNode}
+            label={title}
+            description={description}
+            descriptionSlot={
+              description ? (
+                <FieldDescription
+                  data-slot="setting-row-description"
+                  id={descriptionId}
+                  className={cn(HEADING_DESCRIPTION, descriptionClassName)}
+                >
+                  {description}
+                </FieldDescription>
+              ) : null
+            }
+            descriptionId={descriptionId}
+            folded={folded}
+            fallbackName="About this setting"
+            iconSlot={descriptionIconSlot}
+            triggerTestID="setting-row-description-trigger"
+            rowTestID="setting-row-title-row"
+          />
+        </div>
+      ) : null}
+      {control ? (
+        <div
+          data-slot="setting-row-action"
+          className={cn('cube-rn-view', 'shrink-0 flex-row items-center', actionGap(control), actionClassName)}
+        >
+          {control}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export type { SettingRowIds, SettingRowProps };

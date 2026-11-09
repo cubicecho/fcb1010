@@ -1,13 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Pause, Play, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { CardLayout } from '@/components/card-layout';
+import { Combobox } from '@/components/combobox';
+import { EmptyState } from '@/components/empty-state';
+import { FormField } from '@/components/form-field';
 import { PortSelectors } from '@/components/midi/PortSelectors';
+import { PageLayout } from '@/components/page-layout';
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pause, Play, Trash2 } from '@/components/ui/icons';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { kindLabel, toHex } from '@/lib/midi/decode';
 import { useMidi } from '@/lib/midi/MidiProvider';
 import { type MidiMessageKind, type MonitorEntry, NOISY_KINDS } from '@/lib/midi/types';
@@ -17,6 +21,12 @@ const FLUSH_INTERVAL_MS = 100;
 const MAX_HEX_BYTES = 24;
 
 type DirectionFilter = 'all' | 'in' | 'out';
+
+const DIRECTION_OPTIONS = [
+  { value: 'all', label: 'In + out' },
+  { value: 'in', label: 'In only' },
+  { value: 'out', label: 'Out only' },
+] as const;
 
 const TYPE_FILTER_OPTIONS = [
   { value: 'all', label: 'All types' },
@@ -104,142 +114,138 @@ function MonitorPage() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>MIDI Monitor</CardTitle>
-          <CardDescription>
-            Watch incoming MIDI from your FCB1010. Press a footswitch or move an expression pedal to verify the
-            connection.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end justify-between gap-4">
-          <PortSelectors />
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <label htmlFor="show-noisy" className="flex items-center gap-2 text-sm">
-              <Switch id="show-noisy" checked={showNoisy} onCheckedChange={setShowNoisy} />
-              Show clock / active sensing
-            </label>
-            <Select value={directionFilter} onValueChange={(value) => setDirectionFilter(value as DirectionFilter)}>
-              <SelectTrigger size="sm" className="w-28" aria-label="Direction filter">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">In + out</SelectItem>
-                <SelectItem value="in">In only</SelectItem>
-                <SelectItem value="out">Out only</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as TypeFilter)}>
-              <SelectTrigger size="sm" className="w-40" aria-label="Message type filter">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TYPE_FILTER_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={() => setPaused((value) => !value)}>
-              {paused ? <Play /> : <Pause />}
-              {paused ? 'Resume' : 'Pause'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={clear}>
-              <Trash2 />
-              Clear
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {status === 'error' && (
-        <Card className="border-destructive">
-          <CardHeader>
-            <CardTitle className="text-destructive">MIDI access failed</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" size="sm" onClick={retry}>
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {status === 'unsupported' && (
-        <Card className="border-destructive">
-          <CardHeader>
-            <CardTitle className="text-destructive">Web MIDI unsupported</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-        </Card>
-      )}
-
-      <Card className="gap-2">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Messages</CardTitle>
-          <span className="text-xs text-muted-foreground">
-            {paused && <span className="mr-2 font-medium text-foreground">paused</span>}
-            {visible.length} shown · {totalReceived} received
-          </span>
-        </CardHeader>
-        <CardContent>
-          {visible.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              {entries.length === 0
-                ? 'No messages yet. Connect your FCB1010 and press a footswitch.'
-                : 'No messages match the current filters.'}
-            </p>
-          ) : (
-            <div className="max-h-[60vh] overflow-auto rounded-md border">
-              <Table>
-                <TableHeader className="sticky top-0 bg-card">
-                  <TableRow>
-                    <TableHead className="w-28">Time</TableHead>
-                    <TableHead className="w-12">Dir</TableHead>
-                    <TableHead className="w-44">Port</TableHead>
-                    <TableHead className="w-24">Type</TableHead>
-                    <TableHead className="w-12">Ch</TableHead>
-                    <TableHead>Message</TableHead>
-                    <TableHead className="text-right font-mono">Raw</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visible.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {formatTime(entry.timestamp)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={entry.direction === 'out' ? 'default' : 'outline'} className="text-xs">
-                          {entry.direction === 'out' ? '→ out' : 'in'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-44 truncate text-xs" title={entry.portName}>
-                        {entry.portName}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{kindLabel(entry.message.kind)}</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{entry.message.channel ?? '–'}</TableCell>
-                      <TableCell className="text-sm">{entry.message.summary}</TableCell>
-                      <TableCell
-                        className="text-right font-mono text-xs text-muted-foreground"
-                        title={entry.message.data.length > MAX_HEX_BYTES ? toHex(entry.message.data) : undefined}
-                      >
-                        {formatHex(entry.message.data)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+    <PageLayout
+      title="MIDI Monitor"
+      description="Watch incoming MIDI from your FCB1010. Press a footswitch or move an expression pedal to verify the connection."
+      contentSlot={
+        <div className="flex flex-col gap-4">
+          {status === 'error' && (
+            <Alert
+              variant="destructive"
+              title="MIDI access failed"
+              description={error}
+              actionSlot={<Button variant="outline" size="sm" onClick={retry} content="Retry" />}
+            />
           )}
-        </CardContent>
-      </Card>
-    </div>
+
+          {status === 'unsupported' && <Alert variant="destructive" title="Web MIDI unsupported" description={error} />}
+
+          <CardLayout
+            level={2}
+            title="Ports and filters"
+            description="Filters change what is shown, not what is captured."
+            contentClassName="flex-row flex-wrap items-start gap-4"
+            contentSlot={
+              <>
+                <PortSelectors />
+                <FormField
+                  label="Direction"
+                  className="w-32"
+                  controlSlot={
+                    <Combobox
+                      options={DIRECTION_OPTIONS}
+                      value={directionFilter}
+                      onValueChange={(value: string) => setDirectionFilter(value as DirectionFilter)}
+                    />
+                  }
+                />
+                <FormField
+                  label="Message type"
+                  className="w-44"
+                  controlSlot={
+                    <Combobox
+                      options={TYPE_FILTER_OPTIONS}
+                      value={typeFilter}
+                      onValueChange={(value: string) => setTypeFilter(value as TypeFilter)}
+                    />
+                  }
+                />
+                <FormField
+                  label="Show clock / active sensing"
+                  orientation="horizontal"
+                  className="self-center"
+                  controlSlot={<Switch checked={showNoisy} onCheckedChange={setShowNoisy} />}
+                />
+              </>
+            }
+          />
+
+          <CardLayout
+            level={2}
+            title="Messages"
+            description={`${paused ? 'Paused · ' : ''}${visible.length} shown · ${totalReceived} received`}
+            actionSlot={
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPaused((value) => !value)}
+                  iconSlot={paused ? <Play /> : <Pause />}
+                  content={paused ? 'Resume' : 'Pause'}
+                />
+                <Button variant="outline" size="sm" onClick={clear} iconSlot={<Trash2 />} content="Clear" />
+              </>
+            }
+            emptySlot={
+              <EmptyState
+                compact
+                title={
+                  entries.length === 0
+                    ? 'No messages yet. Connect your FCB1010 and press a footswitch.'
+                    : 'No messages match the current filters.'
+                }
+              />
+            }
+            contentSlot={
+              visible.length === 0 ? null : (
+                <Table maxHeight="lg">
+                  <TableCaption className="sr-only">MIDI messages, newest first</TableCaption>
+                  <TableHeader className="bg-secondary">
+                    <TableRow>
+                      <TableHead className="w-28">Time</TableHead>
+                      <TableHead className="w-12">Dir</TableHead>
+                      <TableHead className="w-44">Port</TableHead>
+                      <TableHead className="w-24">Type</TableHead>
+                      <TableHead className="w-12">Ch</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead className="text-right font-mono">Raw</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visible.map((entry) => (
+                      <TableRow key={entry.id}>
+                        <TableCell className="whitespace-nowrap font-mono text-muted-foreground text-xs">
+                          {formatTime(entry.timestamp)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={entry.direction === 'out' ? 'default' : 'outline'}>
+                            {entry.direction === 'out' ? '→ out' : 'in'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-44 truncate text-xs" title={entry.portName}>
+                          {entry.portName}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{kindLabel(entry.message.kind)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{entry.message.channel ?? '–'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{entry.message.summary}</TableCell>
+                        <TableCell
+                          className="whitespace-nowrap text-right font-mono text-muted-foreground text-xs"
+                          title={entry.message.data.length > MAX_HEX_BYTES ? toHex(entry.message.data) : undefined}
+                        >
+                          {formatHex(entry.message.data)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )
+            }
+          />
+        </div>
+      }
+    />
   );
 }
 
